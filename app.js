@@ -1,14 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     let allData = [];
-    let historyByEvent = new Map(); // event_id -> [{t: Date, price: number}, ...] sorted asc
+    let tickpickData = [];
+    let historyByEvent = new Map();
     let trendChartInstance = null;
     let currentChartIndex = 0;
     let initialized = false;
 
     const localCities = ['New York / New Jersey', 'Philadelphia, PA', 'Boston, MA'];
-    const RELOAD_INTERVAL_MS = 60 * 60 * 1000; // hourly
+    const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
 
-    // DOM Elements
     const searchInput = document.getElementById('search-input');
     const stageFilter = document.getElementById('stage-filter');
     const regionFilter = document.getElementById('region-filter');
@@ -29,13 +29,73 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
 
+    const monthMap = {'Jan':'01', 'Feb':'02', 'Mar':'03', 'Apr':'04', 'May':'05', 'Jun':'06', 'Jul':'07', 'Aug':'08', 'Sep':'09', 'Oct':'10', 'Nov':'11', 'Dec':'12'};
+
+    function matchTickPick(sgRow, tpData) {
+        if(!sgRow.date_time) return null;
+        const match = sgRow.date_time.match(/,\s*([A-Za-z]+)\s*(\d+)/);
+        if (!match) return null;
+        const month = monthMap[match[1].substring(0,3)];
+        const day = String(match[2]).padStart(2, '0');
+        const sgDateStr = `2026-${month}-${day}`;
+        
+        return tpData.find(tpRow => 
+            tpRow.start_date && tpRow.start_date.startsWith(sgDateStr) && 
+            tpRow.venue && sgRow.venue && tpRow.venue.includes(sgRow.venue)
+        );
+    }
+
+    function getFaceValue(stage) {
+        const s = (stage || '').toLowerCase();
+        if (s.includes('final') && !s.includes('semi') && !s.includes('quarter')) return 600;
+        if (s.includes('semi')) return 400;
+        if (s.includes('quarter')) return 250;
+        if (s.includes('16') || s.includes('32')) return 150;
+        return 70; // Group stage
+    }
+
+    function processAggregatedData() {
+        allData.forEach(row => {
+            let tpMatch = matchTickPick(row, tickpickData);
+            let sgPrice = row.latest_low_usd;
+            let tpPrice = tpMatch ? tpMatch.low_price_usd : null;
+
+            let lowestPrice = sgPrice;
+            let bestUrl = row.url;
+            let bestSource = "SeatGeek";
+
+            if (tpPrice && (!lowestPrice || tpPrice < lowestPrice)) {
+                lowestPrice = tpPrice;
+                bestUrl = tpMatch.url;
+                bestSource = "TickPick";
+            } else if (tpPrice && lowestPrice && tpPrice === lowestPrice) {
+                bestSource = "Both";
+            } else if (!sgPrice && tpPrice) {
+                lowestPrice = tpPrice;
+                bestUrl = tpMatch.url;
+                bestSource = "TickPick";
+            } else if (!sgPrice && !tpPrice) {
+                lowestPrice = null;
+                bestSource = "N/A";
+            }
+
+            row.agg_lowest_price = lowestPrice;
+            row.agg_best_url = bestUrl;
+            row.agg_source = bestSource;
+            row.sg_price = sgPrice;
+            row.tp_price = tpPrice;
+        });
+    }
+
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
             fetchCsv('price_history.csv').catch(() => []),
+            fetchCsv('tickpick_data.csv').catch(() => []),
         ])
-            .then(([snapshot, history]) => {
+            .then(([snapshot, history, tpSnapshot]) => {
                 allData = snapshot;
+                tickpickData = tpSnapshot;
 
                 historyByEvent = new Map();
                 for (const row of history) {
@@ -49,6 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (const arr of historyByEvent.values()) {
                     arr.sort((a, b) => a.t - b.t);
                 }
+
+                processAggregatedData();
 
                 if (!initialized) {
                     initDashboard();
@@ -132,10 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Compare current price against the price observed `intervalDays` days ago
-    // (or earliest observation if 'all' or not enough history). Returns {change, pct}.
     function calculateDynamicChange(row, intervalDays) {
-        const currentPrice = row.latest_low_usd;
+        const currentPrice = row.agg_lowest_price || row.latest_low_usd;
         if (!currentPrice) return { change: 0, pct: 0 };
 
         const series = historyByEvent.get(String(row.event_id)) || [];
@@ -147,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const days = parseInt(intervalDays, 10);
             const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-            // Find the last point at or before the cutoff; fallback to earliest
             comparePoint = series[0];
             for (const p of series) {
                 if (p.t.getTime() <= cutoff) comparePoint = p;
@@ -163,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMetrics() {
         const totalMatches = allData.length;
-        const validPrices = allData.map(d => d.latest_low_usd).filter(p => p != null && !isNaN(p));
+        const validPrices = allData.map(d => d.agg_lowest_price).filter(p => p != null && !isNaN(p));
         const cheapestPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
         const avgPrice = validPrices.length > 0 ? validPrices.reduce((a, b) => a + b, 0) / validPrices.length : 0;
         const localMatches = allData.filter(row =>
@@ -190,7 +249,6 @@ document.addEventListener('DOMContentLoaded', () => {
             'Iraq': '🇮🇶', 'Jordan': '🇯🇴', 'DR Congo': '🇨🇩', 'Uzbekistan': '🇺🇿', 'Panama': '🇵🇦',
             'Haiti': '🇭🇹', 'Curacao': '🇨🇼', 'Cape Verde': '🇨🇻', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Austria': '🇦🇹'
         };
-        // Very basic parsing: split by 'vs' and add flags
         if (!countryName) return '';
         let parts = countryName.split(' vs ');
         if (parts.length === 2) {
@@ -198,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let flag2 = flags[parts[1].trim()] || '🏳️';
             return `${flag1} ${parts[0].trim()} vs ${parts[1].trim()} ${flag2}`;
         }
-        return countryName; // For group names like "1A vs 2B"
+        return countryName;
     }
 
     function renderPriorityDeals() {
@@ -209,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localCities.some(city => row.host_city && row.host_city.includes(city))
         );
         const sorted = [...localData]
-            .sort((a, b) => (a.latest_low_usd || 999999) - (b.latest_low_usd || 999999))
+            .sort((a, b) => (a.agg_lowest_price || 999999) - (b.agg_lowest_price || 999999))
             .slice(0, 5);
 
         if (sorted.length === 0) {
@@ -219,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sorted.forEach(row => {
             const tr = document.createElement('tr');
-            const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
+            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
             const daysUntil = calculateDaysUntil(row.date_time);
             const countdownHtml = daysUntil ? `<br><span class="countdown-badge">Starts in ${daysUntil} Days</span>` : '';
             const matchHtml = getFlagEmoji(row.match);
@@ -228,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small>${countdownHtml}</td>
                 <td>${row.host_city}</td>
                 <td class="price-cell">${priceStr}</td>
-                <td><a href="${row.url}" target="_blank" class="btn-link">Buy</a></td>
+                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link">Buy</a></td>
             `;
             tbody.appendChild(tr);
         });
@@ -287,31 +345,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 changeHtml = `<span class="trend-down"><span class="trend-arrow">▼</span>-$${Math.abs(Math.round(change))} ${pctStr}</span>`;
             }
 
-            const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
+            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
             const noteStr = row.trend_note ? row.trend_note : '-';
             const matchHtml = getFlagEmoji(row.match);
-
-            let recHtml = '<span class="badge badge-monitor">Monitor</span>';
-            const stageLower = (row.stage || '').toLowerCase();
-            let reasonablePrice = 300;
-            if (stageLower.includes('final') && !stageLower.includes('semi') && !stageLower.includes('quarter')) {
-                reasonablePrice = 2000;
-            } else if (stageLower.includes('semi')) {
-                reasonablePrice = 1200;
-            } else if (stageLower.includes('quarter')) {
-                reasonablePrice = 800;
-            } else if (stageLower.includes('16') || stageLower.includes('32')) {
-                reasonablePrice = 500;
+            
+            // Platform Source Badge
+            let sourceBadge = '';
+            if(row.agg_source === 'TickPick') {
+                sourceBadge = `<span style="color:#0ea5e9; font-weight:600;">TickPick</span>`;
+            } else if (row.agg_source === 'SeatGeek') {
+                sourceBadge = `<span style="color:#002147; font-weight:600;">SeatGeek</span>`;
+            } else if (row.agg_source === 'Both') {
+                sourceBadge = `<span style="color:#8b5cf6; font-weight:600;">Both</span>`;
+            } else {
+                sourceBadge = `<span style="color:#94a3b8;">N/A</span>`;
             }
 
-            const currentPrice = row.latest_low_usd;
-            if (!currentPrice) {
+            // Face Value Logic
+            const fv = getFaceValue(row.stage);
+            const multiplier = row.agg_lowest_price ? (row.agg_lowest_price / fv).toFixed(1) : 0;
+            const fvBadge = row.agg_lowest_price ? `<br><span class="countdown-badge" style="background:#e2e8f0; color:#334155; margin-top:5px;">${multiplier}x Face Value</span>` : '';
+
+            let recHtml = '<span class="badge badge-monitor">Monitor</span>';
+            
+            if (!row.agg_lowest_price) {
                 recHtml = '<span class="badge badge-monitor">Unknown</span>';
-            } else if (currentPrice <= reasonablePrice) {
-                recHtml = `<span class="badge badge-buy">Good Value (< $${reasonablePrice})</span>`;
-            } else if (currentPrice <= reasonablePrice * 1.3) {
+            } else if (multiplier <= 3.0) {
+                recHtml = `<span class="badge badge-buy">Good Value (< 3x)</span>`;
+            } else if (multiplier <= 5.0) {
                 recHtml = `<span class="badge badge-buy" style="background-color:#fef08a; color:#854d0e; border-color:#fde047;">Fair Price</span>`;
-            } else if (currentPrice > reasonablePrice * 2) {
+            } else if (multiplier >= 10.0) {
                 recHtml = '<span class="badge badge-wait">Highly Overpriced</span>';
             } else {
                 recHtml = '<span class="badge badge-wait">Above Market</span>';
@@ -321,12 +384,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small></td>
                 <td>${row.date_time}</td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td>${row.source}</td>
-                <td class="price-cell">${priceStr}</td>
+                <td>${sourceBadge}</td>
+                <td class="price-cell">${priceStr}${fvBadge}</td>
                 <td>${changeHtml}</td>
                 <td style="font-size:0.8rem; color:#666; max-width:200px;">${noteStr}</td>
                 <td>${recHtml}</td>
-                <td><a href="${row.url}" target="_blank" class="btn-link">Buy</a></td>
+                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link">Buy</a></td>
             `;
             tbody.appendChild(tr);
         });
@@ -354,7 +417,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const series = historyByEvent.get(String(row.event_id)) || [];
 
-        // Filter by real time window, not by index position
         let filtered = series;
         if (period === '1w') {
             const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;

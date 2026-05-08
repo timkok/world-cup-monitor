@@ -19,10 +19,15 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pandas
+        run: pip install pandas requests
 
       - name: Run scraper
         run: python scraper.py
+
+      - name: Run Discord Notification Alerts
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python notify.py
 
       - name: Commit and push if data changed
         run: |

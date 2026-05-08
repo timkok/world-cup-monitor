@@ -1,0 +1,21 @@
+{
+  "name": "World Cup Monitor",
+  "short_name": "WC Monitor",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#002147",
+  "description": "Professional ticket monitor for the 2026 World Cup",
+  "icons": [
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Soccerball.svg/1024px-Soccerball.svg.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Soccerball.svg/1024px-Soccerball.svg.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
