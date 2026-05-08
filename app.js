@@ -176,6 +176,31 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('metric-nj-matches').textContent = localMatches;
     }
 
+    function getFlagEmoji(countryName) {
+        const flags = {
+            'USA': '🇺🇸', 'Mexico': '🇲🇽', 'Canada': '🇨🇦', 'Brazil': '🇧🇷', 'Argentina': '🇦🇷',
+            'France': '🇫🇷', 'Germany': '🇩🇪', 'Spain': '🇪🇸', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Portugal': '🇵🇹',
+            'Netherlands': '🇳🇱', 'Belgium': '🇧🇪', 'Croatia': '🇭🇷', 'Uruguay': '🇺🇾', 'Colombia': '🇨🇴',
+            'Switzerland': '🇨🇭', 'Senegal': '🇸🇳', 'Japan': '🇯🇵', 'South Korea': '🇰🇷', 'Australia': '🇦🇺',
+            'Iran': '🇮🇷', 'Morocco': '🇲🇦', 'Saudi Arabia': '🇸🇦', 'Qatar': '🇶🇦', 'Ecuador': '🇪🇨',
+            'Ghana': '🇬🇭', 'Cameroon': '🇨🇲', 'Tunisia': '🇹🇳', 'Costa Rica': '🇨🇷', 'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+            'Serbia': '🇷🇸', 'Poland': '🇵🇱', 'Denmark': '🇩🇰', 'Ivory Coast': '🇨🇮', 'Czechia': '🇨🇿',
+            'Algeria': '🇩🇿', 'Turkey': '🇹🇷', 'Bosnia & Herzegovina': '🇧🇦', 'South Africa': '🇿🇦',
+            'New Zealand': '🇳🇿', 'Egypt': '🇪🇬', 'Paraguay': '🇵🇾', 'Sweden': '🇸🇪', 'Norway': '🇳🇴',
+            'Iraq': '🇮🇶', 'Jordan': '🇯🇴', 'DR Congo': '🇨🇩', 'Uzbekistan': '🇺🇿', 'Panama': '🇵🇦',
+            'Haiti': '🇭🇹', 'Curacao': '🇨🇼', 'Cape Verde': '🇨🇻', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Austria': '🇦🇹'
+        };
+        // Very basic parsing: split by 'vs' and add flags
+        if (!countryName) return '';
+        let parts = countryName.split(' vs ');
+        if (parts.length === 2) {
+            let flag1 = flags[parts[0].trim()] || '🏳️';
+            let flag2 = flags[parts[1].trim()] || '🏳️';
+            return `${flag1} ${parts[0].trim()} vs ${parts[1].trim()} ${flag2}`;
+        }
+        return countryName; // For group names like "1A vs 2B"
+    }
+
     function renderPriorityDeals() {
         const tbody = document.querySelector('#priority-deals-table tbody');
         tbody.innerHTML = '';
@@ -197,8 +222,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
             const daysUntil = calculateDaysUntil(row.date_time);
             const countdownHtml = daysUntil ? `<br><span class="countdown-badge">Starts in ${daysUntil} Days</span>` : '';
+            const matchHtml = getFlagEmoji(row.match);
+            
             tr.innerHTML = `
-                <td><strong>${row.match}</strong><br><small style="color:#666">${row.stage}</small>${countdownHtml}</td>
+                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small>${countdownHtml}</td>
                 <td>${row.host_city}</td>
                 <td class="price-cell">${priceStr}</td>
                 <td><a href="${row.url}" target="_blank" class="btn-link">Buy</a></td>
@@ -262,6 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
             const noteStr = row.trend_note ? row.trend_note : '-';
+            const matchHtml = getFlagEmoji(row.match);
 
             let recHtml = '<span class="badge badge-monitor">Monitor</span>';
             const stageLower = (row.stage || '').toLowerCase();
@@ -290,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tr.innerHTML = `
-                <td><strong>${row.match}</strong><br><small style="color:#666">${row.stage}</small></td>
+                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small></td>
                 <td>${row.date_time}</td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
                 <td>${row.source}</td>
