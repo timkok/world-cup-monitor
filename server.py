@@ -1,27 +1,15 @@
+"""Local preview server.
+
+The real data updates run in GitHub Actions (see .github/workflows/update.yml).
+This script only serves the static files locally for development; it does NOT
+mutate seatgeek_data.csv or price_history.csv.
+"""
 import http.server
 import socketserver
-import threading
-import time
-import traceback
-
-import scraper
 
 PORT = 8080
-UPDATE_INTERVAL_SECONDS = 24 * 60 * 60  # daily
 
 Handler = http.server.SimpleHTTPRequestHandler
-
-
-def run_scraper_loop():
-    while True:
-        try:
-            scraper.update_data()
-        except Exception:
-            traceback.print_exc()
-        time.sleep(UPDATE_INTERVAL_SECONDS)
-
-
-threading.Thread(target=run_scraper_loop, daemon=True).start()
 
 with socketserver.TCPServer(("", PORT), Handler) as httpd:
     print(f"Serving UI at http://localhost:{PORT}")
