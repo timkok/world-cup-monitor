@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 World Cup Ticket Strategy Dashboard</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="top-banner">
+        <div class="banner-content">
+            <h1>2026 World Cup Ticket Monitor</h1>
+            <p>Live tracking and strategic insights for purchasing secondary market tickets.</p>
+            <p style="margin-top: 10px; font-size: 0.85rem; color: #93c5fd;">Last Updated: <span id="last-updated-time">Loading...</span></p>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Summary Metrics -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <h3 id="metric-total-matches">-</h3>
+                <p>Total Matches Tracked</p>
+            </div>
+            <div class="metric-card">
+                <h3 id="metric-cheapest-price">-</h3>
+                <p>Cheapest Ticket Available</p>
+            </div>
+            <div class="metric-card">
+                <h3 id="metric-avg-price">-</h3>
+                <p>Avg Ticket Price (Tracked)</p>
+            </div>
+            <div class="metric-card">
+                <h3 id="metric-nj-matches">-</h3>
+                <p>Local Matches (NJ/PA/MA)</p>
+            </div>
+        </section>
+
+        <!-- Strategy Callout -->
+        <section class="strategy-callout">
+            <h2>💡 Ticket Buying Strategy (Based on Club World Cup Experience)</h2>
+            <div class="strategy-columns">
+                <div>
+                    <strong>1. Official Channels First:</strong> Always check FIFA.com/tickets. It's the only official source for face-value tickets.
+                </div>
+                <div>
+                    <strong>2. Marquee Matches:</strong> For Finals and Semis, buy as early as possible. Prices rarely drop on secondary markets due to high demand.
+                </div>
+                <div>
+                    <strong>3. Group Stages:</strong> Monitor availability. Last-minute official drops sometimes happen when sponsors return tickets.
+                </div>
+            </div>
+        </section>
+
+        <div class="split-layout">
+            <!-- Left: Top Deals -->
+            <section class="mini-table-section flex-1">
+                <div class="section-header">
+                    <h2>🔥 East Coast Priority Deals</h2>
+                    <p>Cheapest available tickets in New York/New Jersey, Philadelphia, and Boston.</p>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table" id="priority-deals-table">
+                        <thead>
+                            <tr>
+                                <th>Match</th>
+                                <th>City</th>
+                                <th>Price</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="4">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Right: Chart -->
+            <section class="chart-section flex-1">
+                <div class="section-header">
+                    <h2>📈 Historical Price Trend</h2>
+                    <select id="match-selector" class="filter-select">
+                        <option>Loading matches...</option>
+                    </select>
+                </div>
+                <div style="position: relative; height: 250px; width: 100%;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </section>
+        </div>
+
+        <!-- Main Data Table -->
+        <section class="main-table-section">
+            <div class="section-header">
+                <h2>📊 All Matches - Comprehensive Data</h2>
+            </div>
+            
+            <div class="table-filters">
+                <input type="text" id="search-input" class="filter-input" placeholder="Search matches or cities...">
+                <select id="stage-filter" class="filter-select">
+                    <option value="All">All Stages</option>
+                </select>
+                <select id="region-filter" class="filter-select">
+                    <option value="All">All Regions</option>
+                    <option value="Local">Local (NJ/PA/MA)</option>
+                </select>
+            </div>
+
+            <div class="table-responsive">
+                <table class="data-table full-table" id="all-matches-table">
+                    <thead>
+                        <tr>
+                            <th>Match</th>
+                            <th>Date & Time</th>
+                            <th>Venue & City</th>
+                            <th>Source</th>
+                            <th>Latest Price ($)</th>
+                            <th>Change ($ / %)</th>
+                            <th>Trend Note</th>
+                            <th>Recommendation</th>
+                            <th>Link</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-matches-body">
+                        <tr><td colspan="8" class="text-center">Loading data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- Custom JS -->
+    <script src="app.js"></script>
+</body>
+</html>
