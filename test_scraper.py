@@ -1,5 +1,5 @@
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
+from playwright_stealth import stealth
 import time
 
 def test_scrape():
@@ -8,7 +8,7 @@ def test_scrape():
         page = browser.new_page(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         )
-        stealth_sync(page)
+        stealth(page)
         
         url = "https://seatgeek.com/fifa-world-cup-tickets/international-soccer/2026-06-11-2-pm/17650338"
         print(f"Navigating to {url}")
