@@ -72,7 +72,7 @@
                             <tr>
                                 <th>Match</th>
                                 <th>City</th>
-                                <th>Price</th>
+                                <th>Get-in Price</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -87,9 +87,16 @@
             <section class="chart-section flex-1">
                 <div class="section-header">
                     <h2>📈 Historical Price Trend</h2>
-                    <select id="match-selector" class="filter-select">
-                        <option>Loading matches...</option>
-                    </select>
+                    <div>
+                        <select id="match-selector" class="filter-select" style="margin-right: 5px;">
+                            <option>Loading matches...</option>
+                        </select>
+                        <div class="chart-toggles" style="display:inline-block;">
+                            <button class="chart-toggle active" data-period="all">All</button>
+                            <button class="chart-toggle" data-period="1m">1M</button>
+                            <button class="chart-toggle" data-period="1w">1W</button>
+                        </div>
+                    </div>
                 </div>
                 <div style="position: relative; height: 250px; width: 100%;">
                     <canvas id="trendChart"></canvas>
@@ -112,6 +119,12 @@
                     <option value="All">All Regions</option>
                     <option value="Local">Local (NJ/PA/MA)</option>
                 </select>
+                <select id="interval-filter" class="filter-select">
+                    <option value="1">1 Day Change</option>
+                    <option value="3">3 Day Change</option>
+                    <option value="7">7 Day Change</option>
+                    <option value="all">All Time Change</option>
+                </select>
             </div>
 
             <div class="table-responsive">
@@ -122,7 +135,7 @@
                             <th>Date & Time</th>
                             <th>Venue & City</th>
                             <th>Source</th>
-                            <th>Latest Price ($)</th>
+                            <th>Get-in Price</th>
                             <th>Change ($ / %)</th>
                             <th>Trend Note</th>
                             <th>Recommendation</th>
@@ -130,7 +143,7 @@
                         </tr>
                     </thead>
                     <tbody id="all-matches-body">
-                        <tr><td colspan="8" class="text-center">Loading data...</td></tr>
+                        <tr><td colspan="9" class="text-center">Loading data...</td></tr>
                     </tbody>
                 </table>
             </div>

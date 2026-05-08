@@ -1,18 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
     let allData = [];
-    let historyByEvent = new Map(); // event_id -> [{observed_at: Date, low_usd: number}, ...]
+    let historyByEvent = new Map(); // event_id -> [{t: Date, price: number}, ...] sorted asc
     let trendChartInstance = null;
-    
-    // Nearby cities configuration
+    let currentChartIndex = 0;
+    let initialized = false;
+
     const localCities = ['New York / New Jersey', 'Philadelphia, PA', 'Boston, MA'];
+    const RELOAD_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
     // DOM Elements
     const searchInput = document.getElementById('search-input');
     const stageFilter = document.getElementById('stage-filter');
     const regionFilter = document.getElementById('region-filter');
-
-    const RELOAD_INTERVAL_MS = 60 * 60 * 1000; // hourly
-    let initialized = false;
+    const intervalFilter = document.getElementById('interval-filter');
+    const chartToggles = document.querySelectorAll('.chart-toggle');
 
     function fetchCsv(path) {
         return fetch(`${path}?t=${Date.now()}`).then(response => {
@@ -31,12 +32,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
-            fetchCsv('price_history.csv').catch(() => []), // history may not exist yet
+            fetchCsv('price_history.csv').catch(() => []),
         ])
             .then(([snapshot, history]) => {
                 allData = snapshot;
 
-                // Index history by event_id with parsed dates, sorted ascending
                 historyByEvent = new Map();
                 for (const row of history) {
                     if (row.event_id == null || row.low_usd == null) continue;
@@ -59,7 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateLastUpdatedLabel();
             })
             .catch(err => {
-                document.getElementById('all-matches-body').innerHTML = `<tr><td colspan="8" class="text-center" style="color:red">Error loading data: ${err.message}</td></tr>`;
+                document.getElementById('all-matches-body').innerHTML =
+                    `<tr><td colspan="9" class="text-center" style="color:red">Error loading data: ${err.message}</td></tr>`;
             });
     }
 
@@ -71,32 +72,37 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMetrics();
         renderPriorityDeals();
         populateMatchSelector();
-
-        // Initial Table Render
         applyFilters();
 
-        // Initial Chart Render
         if (allData.length > 0) {
             document.getElementById('match-selector').value = 0;
-            updateChart(0);
+            updateChart(0, getActivePeriod());
         }
 
-        // Event Listeners for Filters
         searchInput.addEventListener('input', applyFilters);
         stageFilter.addEventListener('change', applyFilters);
         regionFilter.addEventListener('change', applyFilters);
+        intervalFilter.addEventListener('change', applyFilters);
+
+        chartToggles.forEach(btn => {
+            btn.addEventListener('click', e => {
+                chartToggles.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                updateChart(currentChartIndex, e.target.dataset.period);
+            });
+        });
     }
 
     function refreshDashboard() {
         renderMetrics();
         renderPriorityDeals();
         applyFilters();
+        updateChart(currentChartIndex, getActivePeriod());
+    }
 
-        const selector = document.getElementById('match-selector');
-        const currentIndex = selector.value;
-        if (allData[currentIndex]) {
-            updateChart(currentIndex);
-        }
+    function getActivePeriod() {
+        const active = document.querySelector('.chart-toggle.active');
+        return active ? active.dataset.period : 'all';
     }
 
     function updateLastUpdatedLabel() {
@@ -105,24 +111,62 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(Boolean)
             .map(t => new Date(t).getTime())
             .filter(t => !isNaN(t));
-
         const label = document.getElementById('last-updated-time');
         if (timestamps.length === 0) {
-            label.textContent = "Unknown";
+            label.textContent = 'Unknown';
             return;
         }
-        const latest = new Date(Math.max(...timestamps));
-        label.textContent = latest.toLocaleString();
+        label.textContent = new Date(Math.max(...timestamps)).toLocaleString();
+    }
+
+    function calculateDaysUntil(dateString) {
+        try {
+            const match = dateString.match(/,\s*([A-Za-z]+)\s*(\d+)/);
+            if (!match) return null;
+            const targetDate = new Date(`${match[1]} ${match[2]}, 2026`);
+            const today = new Date();
+            const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
+            return diffDays > 0 ? diffDays : 0;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Compare current price against the price observed `intervalDays` days ago
+    // (or earliest observation if 'all' or not enough history). Returns {change, pct}.
+    function calculateDynamicChange(row, intervalDays) {
+        const currentPrice = row.latest_low_usd;
+        if (!currentPrice) return { change: 0, pct: 0 };
+
+        const series = historyByEvent.get(String(row.event_id)) || [];
+        if (series.length === 0) return { change: 0, pct: 0 };
+
+        let comparePoint;
+        if (intervalDays === 'all') {
+            comparePoint = series[0];
+        } else {
+            const days = parseInt(intervalDays, 10);
+            const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+            // Find the last point at or before the cutoff; fallback to earliest
+            comparePoint = series[0];
+            for (const p of series) {
+                if (p.t.getTime() <= cutoff) comparePoint = p;
+                else break;
+            }
+        }
+
+        const comparePrice = comparePoint.price;
+        const change = currentPrice - comparePrice;
+        const pct = comparePrice > 0 ? (change / comparePrice) * 100 : 0;
+        return { change, pct };
     }
 
     function renderMetrics() {
         const totalMatches = allData.length;
-        
         const validPrices = allData.map(d => d.latest_low_usd).filter(p => p != null && !isNaN(p));
         const cheapestPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
-        const avgPrice = validPrices.length > 0 ? (validPrices.reduce((a, b) => a + b, 0) / validPrices.length) : 0;
-        
-        const localMatches = allData.filter(row => 
+        const avgPrice = validPrices.length > 0 ? validPrices.reduce((a, b) => a + b, 0) / validPrices.length : 0;
+        const localMatches = allData.filter(row =>
             localCities.some(city => row.host_city && row.host_city.includes(city))
         ).length;
 
@@ -135,14 +179,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderPriorityDeals() {
         const tbody = document.querySelector('#priority-deals-table tbody');
         tbody.innerHTML = '';
-        
-        const localData = allData.filter(row => 
+
+        const localData = allData.filter(row =>
             localCities.some(city => row.host_city && row.host_city.includes(city))
         );
+        const sorted = [...localData]
+            .sort((a, b) => (a.latest_low_usd || 999999) - (b.latest_low_usd || 999999))
+            .slice(0, 5);
 
-        const sorted = [...localData].sort((a, b) => (a.latest_low_usd || 999999) - (b.latest_low_usd || 999999)).slice(0, 5);
-        
-        if(sorted.length === 0) {
+        if (sorted.length === 0) {
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">No local deals found.</td></tr>';
             return;
         }
@@ -150,8 +195,10 @@ document.addEventListener('DOMContentLoaded', () => {
         sorted.forEach(row => {
             const tr = document.createElement('tr');
             const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
+            const daysUntil = calculateDaysUntil(row.date_time);
+            const countdownHtml = daysUntil ? `<br><span class="countdown-badge">Starts in ${daysUntil} Days</span>` : '';
             tr.innerHTML = `
-                <td><strong>${row.match}</strong><br><small style="color:#666">${row.stage}</small></td>
+                <td><strong>${row.match}</strong><br><small style="color:#666">${row.stage}</small>${countdownHtml}</td>
                 <td>${row.host_city}</td>
                 <td class="price-cell">${priceStr}</td>
                 <td><a href="${row.url}" target="_blank" class="btn-link">Buy</a></td>
@@ -161,7 +208,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateFilters() {
-        // Populate Stage dropdown
         const stages = [...new Set(allData.map(d => d.stage))].filter(Boolean);
         stages.forEach(stage => {
             const option = document.createElement('option');
@@ -177,20 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const region = regionFilter.value;
 
         const filtered = allData.filter(row => {
-            // Search filter
             const matchStr = (row.match || '').toLowerCase();
             const cityStr = (row.host_city || '').toLowerCase();
             const matchesSearch = matchStr.includes(searchTerm) || cityStr.includes(searchTerm);
-
-            // Stage filter
             const matchesStage = (stage === 'All') || (row.stage === stage);
-
-            // Region filter
             let matchesRegion = true;
             if (region === 'Local') {
                 matchesRegion = localCities.some(c => row.host_city && row.host_city.includes(c));
             }
-
             return matchesSearch && matchesStage && matchesRegion;
         });
 
@@ -200,36 +240,32 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMainTable(data) {
         const tbody = document.getElementById('all-matches-body');
         tbody.innerHTML = '';
-        
+
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No matches found matching criteria.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No matches found matching criteria.</td></tr>';
             return;
         }
 
+        const interval = intervalFilter.value;
+
         data.forEach(row => {
             const tr = document.createElement('tr');
-            
-            let changeHtml = '<span class="change-neutral">-</span>';
-            const change = row.change_vs_previous_usd;
-            const changePct = row.change_vs_previous_pct;
-            const pctStr = changePct ? ` (${changePct}%)` : '';
-            
+            const { change, pct } = calculateDynamicChange(row, interval);
+            const pctStr = `(${Math.abs(pct).toFixed(1)}%)`;
+
+            let changeHtml = '<span class="trend-flat"><span class="trend-arrow">-</span>$0</span>';
             if (change > 0) {
-                changeHtml = `<span class="change-up">+$${change}${pctStr}</span>`;
+                changeHtml = `<span class="trend-up"><span class="trend-arrow">▲</span>+$${Math.abs(Math.round(change))} ${pctStr}</span>`;
             } else if (change < 0) {
-                changeHtml = `<span class="change-down">-$${Math.abs(change)}${pctStr}</span>`;
-            } else if (change === 0) {
-                changeHtml = `<span class="change-neutral">$0</span>`;
+                changeHtml = `<span class="trend-down"><span class="trend-arrow">▼</span>-$${Math.abs(Math.round(change))} ${pctStr}</span>`;
             }
 
             const priceStr = row.latest_low_usd ? `$${row.latest_low_usd.toLocaleString()}` : 'N/A';
             const noteStr = row.trend_note ? row.trend_note : '-';
 
-            // Recommendation Logic based on Reasonable Price Thresholds
             let recHtml = '<span class="badge badge-monitor">Monitor</span>';
             const stageLower = (row.stage || '').toLowerCase();
-            let reasonablePrice = 300; // Default for Group Stage
-            
+            let reasonablePrice = 300;
             if (stageLower.includes('final') && !stageLower.includes('semi') && !stageLower.includes('quarter')) {
                 reasonablePrice = 2000;
             } else if (stageLower.includes('semi')) {
@@ -241,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const currentPrice = row.latest_low_usd;
-            
             if (!currentPrice) {
                 recHtml = '<span class="badge badge-monitor">Unknown</span>';
             } else if (currentPrice <= reasonablePrice) {
@@ -249,9 +284,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (currentPrice <= reasonablePrice * 1.3) {
                 recHtml = `<span class="badge badge-buy" style="background-color:#fef08a; color:#854d0e; border-color:#fde047;">Fair Price</span>`;
             } else if (currentPrice > reasonablePrice * 2) {
-                recHtml = `<span class="badge badge-wait">Highly Overpriced</span>`;
+                recHtml = '<span class="badge badge-wait">Highly Overpriced</span>';
             } else {
-                recHtml = `<span class="badge badge-wait">Above Market</span>`;
+                recHtml = '<span class="badge badge-wait">Above Market</span>';
             }
 
             tr.innerHTML = `
@@ -271,45 +306,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function populateMatchSelector() {
         const selector = document.getElementById('match-selector');
-        selector.innerHTML = ''; 
-        
+        selector.innerHTML = '';
         allData.forEach((row, index) => {
             const option = document.createElement('option');
             option.value = index;
             option.textContent = `${row.match} (${row.host_city})`;
             selector.appendChild(option);
         });
-
-        selector.addEventListener('change', (e) => {
-            updateChart(e.target.value);
+        selector.addEventListener('change', e => {
+            currentChartIndex = e.target.value;
+            updateChart(currentChartIndex, getActivePeriod());
         });
     }
 
-    function updateChart(index) {
+    function updateChart(index, period = 'all') {
+        currentChartIndex = index;
         const row = allData[index];
         if (!row) return;
 
-        const eventKey = String(row.event_id);
-        const series = historyByEvent.get(eventKey) || [];
+        const series = historyByEvent.get(String(row.event_id)) || [];
 
-        const labels = series.map(p => p.t.toLocaleString([], {
+        // Filter by real time window, not by index position
+        let filtered = series;
+        if (period === '1w') {
+            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            filtered = series.filter(p => p.t.getTime() >= cutoff);
+        } else if (period === '1m') {
+            const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            filtered = series.filter(p => p.t.getTime() >= cutoff);
+        }
+
+        const labels = filtered.map(p => p.t.toLocaleString([], {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         }));
-        const dataPoints = series.map(p => p.price);
-        const fullTimestamps = series.map(p => p.t.toLocaleString());
+        const dataPoints = filtered.map(p => p.price);
+        const fullTimestamps = filtered.map(p => p.t.toLocaleString());
 
         const ctx = document.getElementById('trendChart').getContext('2d');
-
-        if (trendChartInstance) {
-            trendChartInstance.destroy();
-        }
+        if (trendChartInstance) trendChartInstance.destroy();
 
         trendChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels,
+                labels,
                 datasets: [{
-                    label: 'Lowest Price ($)',
+                    label: 'Get-in Price ($)',
                     data: dataPoints,
                     borderColor: '#002147',
                     backgroundColor: 'rgba(0, 33, 71, 0.1)',
@@ -355,17 +396,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         ticks: {
                             color: '#666',
                             font: { family: 'Inter' },
-                            callback: value => '$' + value
+                            callback: v => '$' + v
                         }
                     }
                 }
             }
         });
 
-        // If this match has only one data point so far, hint the user
         const chartHeader = document.querySelector('.chart-section .section-header h2');
         if (chartHeader) {
-            chartHeader.textContent = series.length <= 1
+            chartHeader.textContent = filtered.length <= 1
                 ? '📈 Hourly Price Trend (collecting…)'
                 : '📈 Hourly Price Trend';
         }
