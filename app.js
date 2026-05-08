@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     let allData = [];
+    let historyByEvent = new Map(); // event_id -> [{observed_at: Date, low_usd: number}, ...]
     let trendChartInstance = null;
     
     // Nearby cities configuration
@@ -13,29 +14,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000; // hourly
     let initialized = false;
 
+    function fetchCsv(path) {
+        return fetch(`${path}?t=${Date.now()}`).then(response => {
+            if (!response.ok) throw new Error(`Failed to load ${path}`);
+            return response.text();
+        }).then(csvText => new Promise(resolve => {
+            Papa.parse(csvText, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: results => resolve(results.data),
+            });
+        }));
+    }
+
     function loadData() {
-        // Cache-bust so we actually pick up scraper updates
-        fetch(`seatgeek_data.csv?t=${Date.now()}`)
-            .then(response => {
-                if (!response.ok) throw new Error("CSV file not found");
-                return response.text();
-            })
-            .then(csvText => {
-                Papa.parse(csvText, {
-                    header: true,
-                    dynamicTyping: true,
-                    skipEmptyLines: true,
-                    complete: function(results) {
-                        allData = results.data;
-                        if (!initialized) {
-                            initDashboard();
-                            initialized = true;
-                        } else {
-                            refreshDashboard();
-                        }
-                        updateLastUpdatedLabel();
-                    }
-                });
+        Promise.all([
+            fetchCsv('seatgeek_data.csv'),
+            fetchCsv('price_history.csv').catch(() => []), // history may not exist yet
+        ])
+            .then(([snapshot, history]) => {
+                allData = snapshot;
+
+                // Index history by event_id with parsed dates, sorted ascending
+                historyByEvent = new Map();
+                for (const row of history) {
+                    if (row.event_id == null || row.low_usd == null) continue;
+                    const t = new Date(row.observed_at);
+                    if (isNaN(t.getTime())) continue;
+                    const key = String(row.event_id);
+                    if (!historyByEvent.has(key)) historyByEvent.set(key, []);
+                    historyByEvent.get(key).push({ t, price: Number(row.low_usd) });
+                }
+                for (const arr of historyByEvent.values()) {
+                    arr.sort((a, b) => a.t - b.t);
+                }
+
+                if (!initialized) {
+                    initDashboard();
+                    initialized = true;
+                } else {
+                    refreshDashboard();
+                }
+                updateLastUpdatedLabel();
             })
             .catch(err => {
                 document.getElementById('all-matches-body').innerHTML = `<tr><td colspan="8" class="text-center" style="color:red">Error loading data: ${err.message}</td></tr>`;
@@ -268,17 +289,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = allData[index];
         if (!row) return;
 
-        const trendKeys = Object.keys(row).filter(k => k.endsWith('_low_usd') && k !== 'latest_low_usd');
-        
-        const labels = trendKeys.map(k => {
-            const parts = k.replace('_low_usd', '').split('_');
-            return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
-        });
-        
-        const dataPoints = trendKeys.map(k => row[k]);
+        const eventKey = String(row.event_id);
+        const series = historyByEvent.get(eventKey) || [];
+
+        const labels = series.map(p => p.t.toLocaleString([], {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        }));
+        const dataPoints = series.map(p => p.price);
+        const fullTimestamps = series.map(p => p.t.toLocaleString());
 
         const ctx = document.getElementById('trendChart').getContext('2d');
-        
+
         if (trendChartInstance) {
             trendChartInstance.destroy();
         }
@@ -290,14 +311,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 datasets: [{
                     label: 'Lowest Price ($)',
                     data: dataPoints,
-                    borderColor: '#002147', // Navy Blue
+                    borderColor: '#002147',
                     backgroundColor: 'rgba(0, 33, 71, 0.1)',
                     borderWidth: 2,
                     pointBackgroundColor: '#2563eb',
                     pointBorderColor: '#fff',
-                    pointRadius: 4,
+                    pointRadius: 3,
                     fill: true,
-                    tension: 0.1 // straighter lines for professional look
+                    tension: 0.1,
+                    spanGaps: true,
                 }]
             },
             options: {
@@ -313,27 +335,39 @@ document.addEventListener('DOMContentLoaded', () => {
                         cornerRadius: 4,
                         displayColors: false,
                         callbacks: {
-                            label: function(context) {
-                                return '$' + context.parsed.y.toLocaleString();
-                            }
+                            title: ctx => fullTimestamps[ctx[0].dataIndex] || '',
+                            label: ctx => '$' + ctx.parsed.y.toLocaleString(),
                         }
                     }
                 },
                 scales: {
                     x: {
                         grid: { color: '#e2e8f0' },
-                        ticks: { color: '#666', font: { family: 'Inter' } }
+                        ticks: {
+                            color: '#666',
+                            font: { family: 'Inter' },
+                            maxTicksLimit: 10,
+                            autoSkip: true,
+                        }
                     },
                     y: {
                         grid: { color: '#e2e8f0' },
-                        ticks: { 
-                            color: '#666', 
+                        ticks: {
+                            color: '#666',
                             font: { family: 'Inter' },
-                            callback: function(value) { return '$' + value; }
+                            callback: value => '$' + value
                         }
                     }
                 }
             }
         });
+
+        // If this match has only one data point so far, hint the user
+        const chartHeader = document.querySelector('.chart-section .section-header h2');
+        if (chartHeader) {
+            chartHeader.textContent = series.length <= 1
+                ? '📈 Hourly Price Trend (collecting…)'
+                : '📈 Hourly Price Trend';
+        }
     }
 });
