@@ -35,11 +35,24 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadSeen() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); } }
     function saveSeen(s) { localStorage.setItem(SEEN_KEY, JSON.stringify([...s])); }
 
-    // --- Pinned matches (user manually starred) ---
-    const PINS_KEY = 'wcm.pinned.v1';
-    function loadPins() { try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || '[]')); } catch { return new Set(); } }
-    function savePins(s) { localStorage.setItem(PINS_KEY, JSON.stringify([...s])); }
-    let pinnedSet = loadPins();
+    // --- Pinned matches (user manually starred, with optional reason) ---
+    const PINS_KEY = 'wcm.pinned.v2';
+    function loadPins() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(PINS_KEY) || '{}');
+            // Migrate from v1 (Set of IDs) to v2 (Map of ID -> reason)
+            if (Array.isArray(raw)) {
+                const map = {};
+                raw.forEach(id => map[id] = '');
+                return map;
+            }
+            return raw;
+        } catch { return {}; }
+    }
+    function savePins(p) { localStorage.setItem(PINS_KEY, JSON.stringify(p)); }
+    let pinnedMap = loadPins();
+    // Helper: is pinned?
+    function isPinned(eid) { return eid in pinnedMap; }
 
     // --- DOM Elements ---
     const searchInput = document.getElementById('search-input');
@@ -893,9 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         // Pinned matches first
-        const pinned = allData.filter(r => r.agg_lowest_price && pinnedSet.has(String(r.event_id)));
+        const pinned = allData.filter(r => r.agg_lowest_price && isPinned(String(r.event_id)));
         // Auto watchlist: local + strong teams (excluding already pinned)
-        const auto = allData.filter(r => r.agg_lowest_price && !pinnedSet.has(String(r.event_id)) && (
+        const auto = allData.filter(r => r.agg_lowest_price && !isPinned(String(r.event_id)) && (
             localCities.some(c => r.host_city && r.host_city.includes(c)) || isStrongMatch(r.match)
         ));
 
@@ -907,10 +920,12 @@ document.addEventListener('DOMContentLoaded', () => {
         sortWL(pinned);
         sortWL(auto);
 
-        function renderWLRow(row, isPinned) {
+        function renderWLRow(row, pinned) {
             const tr = document.createElement('tr');
             const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span> ' : '';
-            const pinBtn = isPinned
+            const eid = String(row.event_id);
+            const pinReason = pinnedMap[eid] || '';
+            const pinBtn = pinned
                 ? `<button class="pin-btn pinned" data-eid="${row.event_id}" title="Unpin">⭐</button>`
                 : `<button class="pin-btn" data-eid="${row.event_id}" title="Pin to watchlist">☆</button>`;
             const distToTarget = row.agg_lowest_price && row.target_price
@@ -918,8 +933,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<span style="color:#16a34a;font-size:0.78rem;">$${Math.abs(Math.round(row.agg_lowest_price - row.target_price))} below</span>`
                     : `<span style="color:#dc2626;font-size:0.78rem;">$${Math.round(row.agg_lowest_price - row.target_price)} above</span>`)
                 : '';
+            const pinReasonHtml = pinned && pinReason ? `<br><small style="color:#a78bfa;font-style:italic;">${pinReason}</small>` : '';
             tr.innerHTML = `
-                <td>${pinBtn} <strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
+                <td>${pinBtn} <strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small>${pinReasonHtml}</td>
                 <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b;">${customMark}Target: $${Math.round(row.target_price)}</small><br>${distToTarget}</td>
                 <td style="font-size:0.8rem; color:#475569;">${getSignalBadge(row.signal)}<br>${row.reason}</td>
                 <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
@@ -949,10 +965,14 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.querySelectorAll('.pin-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.stopPropagation();
-                const eid = btn.dataset.eid;
-                if (pinnedSet.has(eid)) pinnedSet.delete(eid);
-                else pinnedSet.add(eid);
-                savePins(pinnedSet);
+                const eid = String(btn.dataset.eid);
+                if (isPinned(eid)) {
+                    delete pinnedMap[eid];
+                } else {
+                    const reason = prompt('Why pin this match? (optional)', '') || '';
+                    pinnedMap[eid] = reason;
+                }
+                savePins(pinnedMap);
                 refreshDashboard();
             });
         });
@@ -995,12 +1015,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Apply Sorting — decision priority first by default
+        // "Best Action" order: matches needing FIFA check first, then Buy, Watch, Wait, Avoid
         const decisionOrder = { 'Buy': 0, 'Wait': 1, 'Watch': 2, 'Unknown': 3, 'Avoid': 4 };
         filtered.sort((a, b) => {
             let valA, valB;
             if (currentSortCol === 'decision') {
-                valA = decisionOrder[a.decision] ?? 3;
-                valB = decisionOrder[b.decision] ?? 3;
+                // FIFA-first priority boost: matches >3x that should check FIFA go up
+                const fA = shouldCheckFifa(a) && a.decision !== 'Buy' ? -0.5 : 0;
+                const fB = shouldCheckFifa(b) && b.decision !== 'Buy' ? -0.5 : 0;
+                valA = (decisionOrder[a.decision] ?? 3) + fA;
+                valB = (decisionOrder[b.decision] ?? 3) + fB;
                 if (valA !== valB) return currentSortDir === 'asc' ? valA - valB : valB - valA;
                 // Secondary: price ascending within same decision
                 return (a.agg_lowest_price || 999999) - (b.agg_lowest_price || 999999);
@@ -1446,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Mass Drop Detection ---
+    // --- Mass Drop Detection with Confidence ---
     function checkMassDrop() {
         const banner = document.getElementById('mass-drop-banner');
         const details = document.getElementById('mass-drop-details');
@@ -1454,15 +1478,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const now = Date.now();
         const window30m = 30 * 60000;
+        const window10m = 10 * 60000;
         const recentAvailable = fifaEntries.filter(e =>
             (e.status === 'available' || e.status === 'limited') &&
             (now - new Date(e.timestamp).getTime()) < window30m
         );
         const uniqueMatches = new Set(recentAvailable.map(e => e.event_id));
+        const recent10 = recentAvailable.filter(e => (now - new Date(e.timestamp).getTime()) < window10m);
+        const unique10 = new Set(recent10.map(e => e.event_id));
+        const uniqueCats = new Set(recentAvailable.flatMap(e => e.categories || []));
 
-        if (uniqueMatches.size >= 3) {
+        let confidence = '';
+        let show = false;
+        if (unique10.size >= 5 || (uniqueMatches.size >= 5 && uniqueCats.size >= 3)) {
+            confidence = '🟢 High Confidence — Mass Drop';
+            show = true;
+        } else if (unique10.size >= 3 || uniqueMatches.size >= 3) {
+            confidence = '🟡 Medium Confidence — Likely Drop';
+            show = true;
+        } else if (uniqueMatches.size >= 1) {
+            const latest = recentAvailable.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+            if (latest && (now - new Date(latest.timestamp).getTime()) < 2 * 60000) {
+                confidence = '🟠 Low Confidence — Possible Cart Return';
+                show = true;
+            }
+        }
+
+        if (show) {
             banner.style.display = 'block';
-            details.textContent = ` ${uniqueMatches.size} matches went available in the last 30 min! `;
+            details.textContent = ` ${uniqueMatches.size} match(es) available. ${confidence} `;
+            // Auto-expand FIFA section
+            if (fifaContent) fifaContent.style.display = 'block';
+            if (fifaArrow) fifaArrow.textContent = '▲';
         } else {
             banner.style.display = 'none';
         }
@@ -1475,5 +1522,10 @@ document.addEventListener('DOMContentLoaded', () => {
         populateFifaMatchSelector();
         renderFifaTable();
         checkMassDrop();
+        // Auto-expand FIFA section if there's data
+        if (fifaEntries.length > 0 && fifaContent) {
+            fifaContent.style.display = 'block';
+            if (fifaArrow) fifaArrow.textContent = '▲';
+        }
     };
 });
