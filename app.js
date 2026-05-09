@@ -497,9 +497,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 datasets: [{
                     label: 'Get-in Price ($)',
                     data: dataPoints,
-                    borderColor: '#002147',
-                    backgroundColor: 'rgba(0, 33, 71, 0.1)',
-                    borderWidth: 2,
+                    borderColor: '#38bdf8',
+                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                    borderWidth: 3,
                     pointBackgroundColor: '#2563eb',
                     pointBorderColor: '#fff',
                     pointRadius: 3,
