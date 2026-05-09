@@ -13,11 +13,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const strongTeams = ['USA', 'Argentina', 'Brazil', 'France', 'England', 'Spain', 'Germany', 'Portugal'];
     
     // Family Cost Settings
-    let fcTickets = 4;
-    let fcParking = 80;
-    let fcFood = 120;
+    let fcTickets = parseInt(localStorage.getItem('fcTickets')) || 4;
+    let fcParking = parseInt(localStorage.getItem('fcParking')) || 80;
+    let fcFood = parseInt(localStorage.getItem('fcFood')) || 120;
 
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
+    
+    let currentSortCol = 'match';
+    let currentSortDir = 'asc';
 
     // --- User targets (per-match overrides, persisted in localStorage) ---
     const TARGETS_KEY = 'wcm.userTargets.v1';
@@ -321,9 +324,41 @@ document.addEventListener('DOMContentLoaded', () => {
             fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
             fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
             fcFood = parseInt(document.getElementById('fc-food').value) || 120;
+            
+            localStorage.setItem('fcTickets', fcTickets);
+            localStorage.setItem('fcParking', fcParking);
+            localStorage.setItem('fcFood', fcFood);
+            
             processAggregatedData();
             refreshDashboard();
         });
+
+        // Add sorting listeners
+        const headers = document.querySelectorAll('#all-matches-table th[data-sort]');
+        headers.forEach(th => {
+            th.addEventListener('click', () => {
+                const sortCol = th.dataset.sort;
+                if (currentSortCol === sortCol) {
+                    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSortCol = sortCol;
+                    currentSortDir = 'asc';
+                }
+                
+                headers.forEach(h => {
+                    const baseText = h.textContent.replace(' ▲', '').replace(' ▼', '').replace(' ↕', '');
+                    if (h === th) {
+                        h.textContent = baseText + (currentSortDir === 'asc' ? ' ▲' : ' ▼');
+                    } else {
+                        h.textContent = baseText + ' ↕';
+                    }
+                });
+                
+                applyFilters();
+            });
+        });
+
+        startUpdateCountdown();
 
         quickFilters.forEach(btn => {
             btn.addEventListener('click', e => {
@@ -581,6 +616,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentQuickFilter === 'hide10') matchesQuick = row.multiplier > 0 && row.multiplier <= 10;
 
             return matchesSearch && matchesStage && matchesRegion && matchesQuick;
+            return matchesSearch && matchesStage && matchesRegion && matchesQuick;
+        });
+
+        // Apply Sorting
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (currentSortCol === 'match') {
+                valA = a.match || '';
+                valB = b.match || '';
+            } else if (currentSortCol === 'venue') {
+                valA = a.venue || '';
+                valB = b.venue || '';
+            } else if (currentSortCol === 'price') {
+                valA = a.agg_lowest_price || 999999;
+                valB = b.agg_lowest_price || 999999;
+            } else if (currentSortCol === 'multiplier') {
+                valA = a.multiplier || 999;
+                valB = b.multiplier || 999;
+            } else if (currentSortCol === 'cost') {
+                valA = a.family_cost || 999999;
+                valB = b.family_cost || 999999;
+            } else if (currentSortCol === 'fit') {
+                valA = a.family_fit || '';
+                valB = b.family_fit || '';
+            }
+            
+            if (valA < valB) return currentSortDir === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSortDir === 'asc' ? 1 : -1;
+            return 0;
         });
 
         renderMainTable(filtered);
@@ -608,13 +672,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.family_fit === 'Family Friendly') fitColor = '#059669';
             if (row.family_fit === 'Hard with Kids') fitColor = '#d97706';
             if (row.family_fit === 'Not Worth Travel') fitColor = '#dc2626';
-
             const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span>' : '';
+
+            // Calculate 24h trend
+            const ch24 = calculateDynamicChange(row, 1);
+            let trendHtml = '';
+            if (ch24.change > 0) {
+                trendHtml = `<span style="color:#dc2626; font-size:0.8rem; font-weight:bold;">↗ (+$${Math.round(ch24.change)})</span>`;
+            } else if (ch24.change < 0) {
+                trendHtml = `<span style="color:#16a34a; font-size:0.8rem; font-weight:bold;">↘ (-$${Math.abs(Math.round(ch24.change))})</span>`;
+            }
 
             tr.innerHTML = `
                 <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}</small></td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td class="price-cell">${priceStr}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span></td>
+                <td class="price-cell">${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span></td>
                 <td>${getSignalBadge(row.signal)}</td>
                 <td><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></td>
@@ -750,5 +822,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+    }
+
+    function startUpdateCountdown() {
+        const countdownLabel = document.getElementById('update-countdown');
+        if (!countdownLabel) return;
+        
+        function update() {
+            const now = new Date();
+            const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
+            const diffMs = nextHour - now;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffSecs = Math.floor((diffMs % 60000) / 1000);
+            countdownLabel.textContent = `${String(diffMins).padStart(2, '0')}:${String(diffSecs).padStart(2, '0')}`;
+        }
+        update();
+        setInterval(update, 1000);
     }
 });
