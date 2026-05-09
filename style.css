@@ -408,6 +408,20 @@ h1, h2, h3, h4 { color: var(--primary-color); }
     display: none;
 }
 
+/* Pin button */
+.pin-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 2px 4px;
+    vertical-align: middle;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+.pin-btn:hover { opacity: 1; }
+.pin-btn.pinned { opacity: 1; }
+
 /* ----- Mobile card layout (≤ 640px) -----
    Render the All-Matches table as one card per row instead of forcing
    horizontal scroll on tiny screens. Each <td> labels itself via the

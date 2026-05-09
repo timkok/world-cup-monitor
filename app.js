@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
     
-    let currentSortCol = 'match';
+    let currentSortCol = 'decision';
     let currentSortDir = 'asc';
 
     // --- User targets (per-match overrides, persisted in localStorage) ---
@@ -35,6 +35,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadSeen() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); } }
     function saveSeen(s) { localStorage.setItem(SEEN_KEY, JSON.stringify([...s])); }
 
+    // --- Pinned matches (user manually starred) ---
+    const PINS_KEY = 'wcm.pinned.v1';
+    function loadPins() { try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || '[]')); } catch { return new Set(); } }
+    function savePins(s) { localStorage.setItem(PINS_KEY, JSON.stringify([...s])); }
+    let pinnedSet = loadPins();
+
     // --- DOM Elements ---
     const searchInput = document.getElementById('search-input');
     const stageFilter = document.getElementById('stage-filter');
@@ -43,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickFilters = document.querySelectorAll('.quick-filter');
     const btnUpdateCost = document.getElementById('update-family-cost');
 
-    let currentQuickFilter = 'all';
+    let currentQuickFilter = 'hide10';
 
     // --- Data Fetching ---
     function fetchCsv(path) {
@@ -325,29 +331,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function generateReason(row, multiplier, decision, familyFit) {
-        let reason = "";
-        const city = (row.host_city || '').split(',')[0];
+        const parts = [];
         const isEast = localCities.some(c => row.host_city && row.host_city.includes(c));
+        const isML = metlifeCities.some(c => row.host_city && row.host_city.includes(c));
 
+        // Core decision reason (keep short)
         if (decision === 'Avoid') {
-            if (multiplier > 10) reason = `Absurdly overpriced (${multiplier.toFixed(1)}x face).`;
-            else reason = `Too expensive vs face value.`;
+            parts.push(multiplier > 10 ? `${Math.round(multiplier)}x face, way too high` : 'Above target, too pricey');
         } else if (decision === 'Buy') {
-            if (row.signal === 'No data') reason = `Below target price (new listing).`;
-            else reason = `Hitting target price! ${multiplier.toFixed(1)}x face.`;
+            parts.push('Below target, buy candidate');
+        } else if (decision === 'Wait') {
+            parts.push('Declining, let it drop');
         } else {
-            if (row.signal === 'No data') reason = `New listing, watching.`;
-            else reason = `Close to target. Keep watching.`;
+            parts.push('Close to target');
         }
 
-        if (familyFit === 'Family Friendly') reason += ` Great local weekend trip.`;
-        else if (familyFit === 'Hard with Kids') reason += ` Late night or far drive.`;
-        else if (familyFit === 'Not Worth Travel') reason += ` West coast/far travel for early stage.`;
-        else if (isEast) reason += ` Good East Coast option.`;
+        // Location context (1 phrase max)
+        if (isML) parts.push('MetLife');
+        else if (familyFit === 'Family Friendly') parts.push('good local day trip');
+        else if (familyFit === 'Hard with Kids') parts.push('late/far, hard w/ kids');
+        else if (familyFit === 'Not Worth Travel') parts.push('flight city');
+        else if (isEast) parts.push('East Coast');
 
-        if (isStrongMatch(row.match)) reason += ` High demand teams.`;
+        // Team tax
+        if (isStrongMatch(row.match)) parts.push('strong teams');
 
-        return reason;
+        return parts.join('. ');
     }
 
     // Build per-SG-event merged time series from price_history.csv (SG),
@@ -538,18 +547,24 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        btnUpdateCost.addEventListener('click', () => {
-            fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
-            fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
-            fcFood = parseInt(document.getElementById('fc-food').value) || 120;
-            
-            localStorage.setItem('fcTickets', fcTickets);
-            localStorage.setItem('fcParking', fcParking);
-            localStorage.setItem('fcFood', fcFood);
+        if (btnUpdateCost) {
+            btnUpdateCost.addEventListener('click', () => {
+                fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
+                fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
+                fcFood = parseInt(document.getElementById('fc-food').value) || 120;
+                localStorage.setItem('fcTickets', fcTickets);
+                localStorage.setItem('fcParking', fcParking);
+                localStorage.setItem('fcFood', fcFood);
+                processAggregatedData();
+                buildMergedHistory();
+                applySignalsAndDecisions();
+                refreshDashboard();
+            });
+        }
 
-            processAggregatedData();
-            applySignalsAndDecisions();
-            refreshDashboard();
+        // Default highlight on hide10 button
+        quickFilters.forEach(b => {
+            if (b.dataset.filter === 'hide10') b.style.backgroundColor = '#2563eb';
         });
 
         // Add sorting listeners
@@ -776,60 +791,109 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getDecisionBadge(decision, url) {
         if (decision === 'Buy') return `<a href="${url}" target="_blank" class="badge badge-buy" style="display:inline-block; padding:8px 12px; text-decoration:none;">BUY NOW</a>`;
-        if (decision === 'Watch') return `<span class="badge badge-monitor" style="background:#fef08a; color:#854d0e; border:1px solid #fde047;">WATCH</span>`;
-        return `<span class="badge badge-wait">AVOID</span>`;
+        if (decision === 'Watch' || decision === 'Wait') return `<a href="${url}" target="_blank" class="badge badge-monitor" style="display:inline-block; padding:6px 10px; text-decoration:none; background:#fef9c3; color:#854d0e; border:1px solid #fde047;">WATCH</a>`;
+        return `<span class="badge badge-wait" style="background:#f1f5f9; color:#94a3b8; border:1px solid #e2e8f0;">AVOID</span>`;
     }
 
     function renderMetrics() {
         const validRows = allData.filter(d => d.agg_lowest_price != null && !isNaN(d.agg_lowest_price));
         
+        // Today's Buy: best buy-decision match
         const buys = validRows.filter(r => r.decision === 'Buy');
         buys.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
-        document.getElementById('metric-best-buy').innerHTML = buys.length > 0 ? `${getFlagEmoji(buys[0].match)}<br><small>$${buys[0].agg_lowest_price}</small>` : 'None';
+        const bestBuy = buys[0];
+        document.getElementById('metric-best-buy').innerHTML = bestBuy
+            ? `<span style="font-size:0.85rem">${bestBuy.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${bestBuy.agg_lowest_price}</span><br><small style="color:#64748b">Target $${Math.round(bestBuy.target_price)}</small>`
+            : '<span style="color:#94a3b8">None today</span>';
 
+        // Cheapest Driveable
         const locals = validRows.filter(r => localCities.some(c => r.host_city && r.host_city.includes(c)));
         locals.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price);
-        document.getElementById('metric-cheapest-local').innerHTML = locals.length > 0 ? `${getFlagEmoji(locals[0].match)}<br><small>$${locals[0].agg_lowest_price}</small>` : 'N/A';
+        const cheapLocal = locals[0];
+        document.getElementById('metric-cheapest-local').innerHTML = cheapLocal
+            ? `<span style="font-size:0.85rem">${cheapLocal.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${cheapLocal.agg_lowest_price}</span><br><small style="color:#64748b">${cheapLocal.host_city.split(',')[0]}</small>`
+            : 'N/A';
 
+        // Best MetLife Watch
         const metlife = validRows.filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
         metlife.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
-        document.getElementById('metric-best-metlife').innerHTML = metlife.length > 0 ? `${getFlagEmoji(metlife[0].match)}<br><small>$${metlife[0].agg_lowest_price}</small>` : 'N/A';
+        const bestML = metlife[0];
+        document.getElementById('metric-best-metlife').innerHTML = bestML
+            ? `<span style="font-size:0.85rem">${bestML.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${bestML.agg_lowest_price}</span><br><small style="color:#64748b">Target $${Math.round(bestML.target_price)}</small>`
+            : 'N/A';
 
+        // Do Not Buy count
         const avoids = validRows.filter(r => r.decision === 'Avoid').length;
-        document.getElementById('metric-avoid-count').textContent = avoids;
+        document.getElementById('metric-avoid-count').innerHTML = `<span style="font-size:1.5rem;font-weight:700">${avoids}</span><br><small style="color:#64748b">of ${validRows.length} matches</small>`;
     }
 
     function renderDecisionBoard() {
         const tbody = document.getElementById('decision-board-body');
         tbody.innerHTML = '';
 
-        const watchlistData = allData.filter(r => r.agg_lowest_price && (
+        // Pinned matches first
+        const pinned = allData.filter(r => r.agg_lowest_price && pinnedSet.has(String(r.event_id)));
+        // Auto watchlist: local + strong teams (excluding already pinned)
+        const auto = allData.filter(r => r.agg_lowest_price && !pinnedSet.has(String(r.event_id)) && (
             localCities.some(c => r.host_city && r.host_city.includes(c)) || isStrongMatch(r.match)
         ));
 
-        watchlistData.sort((a,b) => {
+        const sortWL = (arr) => arr.sort((a,b) => {
             if (a.decision === 'Buy' && b.decision !== 'Buy') return -1;
             if (a.decision !== 'Buy' && b.decision === 'Buy') return 1;
             return (a.agg_lowest_price/a.target_price) - (b.agg_lowest_price/b.target_price);
         });
+        sortWL(pinned);
+        sortWL(auto);
 
-        const top10 = watchlistData.slice(0, 10);
-
-        if(top10.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No matches on watchlist.</td></tr>';
-            return;
-        }
-
-        top10.forEach(row => {
+        function renderWLRow(row, isPinned) {
             const tr = document.createElement('tr');
             const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span> ' : '';
+            const pinBtn = isPinned
+                ? `<button class="pin-btn pinned" data-eid="${row.event_id}" title="Unpin">⭐</button>`
+                : `<button class="pin-btn" data-eid="${row.event_id}" title="Pin to watchlist">☆</button>`;
+            const distToTarget = row.agg_lowest_price && row.target_price
+                ? (row.agg_lowest_price <= row.target_price
+                    ? `<span style="color:#16a34a;font-size:0.78rem;">$${Math.abs(Math.round(row.agg_lowest_price - row.target_price))} below</span>`
+                    : `<span style="color:#dc2626;font-size:0.78rem;">$${Math.round(row.agg_lowest_price - row.target_price)} above</span>`)
+                : '';
             tr.innerHTML = `
-                <td><strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
-                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">${customMark}Target: $${Math.round(row.target_price)}</small><div style="margin-top:4px;">${renderSources(row)}</div></td>
+                <td>${pinBtn} <strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
+                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b;">${customMark}Target: $${Math.round(row.target_price)}</small><br>${distToTarget}</td>
                 <td style="font-size:0.8rem; color:#475569;">${getSignalBadge(row.signal)}<br>${row.reason}</td>
                 <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
-            tbody.appendChild(tr);
+            return tr;
+        }
+
+        if (pinned.length > 0) {
+            const header = document.createElement('tr');
+            header.innerHTML = '<td colspan="4" style="background:#fef9c3;font-weight:600;font-size:0.85rem;padding:6px 12px;">📌 Pinned</td>';
+            tbody.appendChild(header);
+            pinned.forEach(row => tbody.appendChild(renderWLRow(row, true)));
+        }
+
+        if (auto.length > 0) {
+            const header = document.createElement('tr');
+            header.innerHTML = '<td colspan="4" style="background:#f0f9ff;font-weight:600;font-size:0.85rem;padding:6px 12px;">🤖 Auto (Local + Strong Teams)</td>';
+            tbody.appendChild(header);
+            auto.slice(0, 10).forEach(row => tbody.appendChild(renderWLRow(row, false)));
+        }
+
+        if (pinned.length === 0 && auto.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No matches on watchlist.</td></tr>';
+        }
+
+        // Bind pin buttons
+        tbody.querySelectorAll('.pin-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const eid = btn.dataset.eid;
+                if (pinnedSet.has(eid)) pinnedSet.delete(eid);
+                else pinnedSet.add(eid);
+                savePins(pinnedSet);
+                refreshDashboard();
+            });
         });
     }
 
@@ -867,13 +931,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentQuickFilter === 'hide10') matchesQuick = row.multiplier > 0 && row.multiplier <= 10;
 
             return matchesSearch && matchesStage && matchesRegion && matchesQuick;
-            return matchesSearch && matchesStage && matchesRegion && matchesQuick;
         });
 
-        // Apply Sorting
+        // Apply Sorting — decision priority first by default
+        const decisionOrder = { 'Buy': 0, 'Wait': 1, 'Watch': 2, 'Unknown': 3, 'Avoid': 4 };
         filtered.sort((a, b) => {
             let valA, valB;
-            if (currentSortCol === 'match') {
+            if (currentSortCol === 'decision') {
+                valA = decisionOrder[a.decision] ?? 3;
+                valB = decisionOrder[b.decision] ?? 3;
+                if (valA !== valB) return currentSortDir === 'asc' ? valA - valB : valB - valA;
+                // Secondary: price ascending within same decision
+                return (a.agg_lowest_price || 999999) - (b.agg_lowest_price || 999999);
+            } else if (currentSortCol === 'match') {
                 valA = a.match || '';
                 valB = b.match || '';
             } else if (currentSortCol === 'venue') {
