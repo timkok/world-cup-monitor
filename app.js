@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function initDashboard() {
         populateFilters();
         renderMetrics();
-        renderPriorityDeals();
+        renderSmartRecommendations();
         populateMatchSelector();
         applyFilters();
 
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function refreshDashboard() {
         renderMetrics();
-        renderPriorityDeals();
+        renderSmartRecommendations();
         applyFilters();
         updateChart(currentChartIndex, getActivePeriod());
     }
@@ -259,34 +259,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return countryName;
     }
 
-    function renderPriorityDeals() {
+    function generateOpinion(row, multiplier, pct7d, isLocal) {
+        let reasons = [];
+        let emoji = '⭐';
+        if (pct7d <= -10) {
+            emoji = '📉';
+            reasons.push(`Dropped ${Math.abs(pct7d).toFixed(0)}% in 7 days`);
+        }
+        if (multiplier <= 2.5) {
+            emoji = '🔥';
+            reasons.push(`Rare ${multiplier.toFixed(1)}x premium`);
+        }
+        if (isLocal) {
+            reasons.push(`Local match in ${row.host_city.split(',')[0]}`);
+        }
+        
+        let stageLower = (row.stage || '').toLowerCase();
+        if (stageLower.includes('quarter') || stageLower.includes('semi') || stageLower.includes('final')) {
+            reasons.push(`High-prestige ${row.stage}`);
+        }
+
+        if (reasons.length === 0) {
+            reasons.push(`Solid value at ${multiplier.toFixed(1)}x premium`);
+        }
+
+        return `<span style="font-size:1.1rem">${emoji}</span> <span style="font-size:0.85rem; color:#475569;">${reasons.join('. ')}.</span>`;
+    }
+
+    function renderSmartRecommendations() {
         const tbody = document.querySelector('#priority-deals-table tbody');
+        if (!tbody) return;
         tbody.innerHTML = '';
 
-        const localData = allData.filter(row =>
-            localCities.some(city => row.host_city && row.host_city.includes(city))
-        );
-        const sorted = [...localData]
-            .sort((a, b) => (a.agg_lowest_price || 999999) - (b.agg_lowest_price || 999999))
-            .slice(0, 5);
+        // Calculate Value Score for all tracked matches
+        const scoredData = allData.filter(r => r.agg_lowest_price).map(row => {
+            const fv = getFaceValue(row.stage);
+            const multiplier = row.agg_lowest_price / fv;
+            
+            const { pct } = calculateDynamicChange(row, 7); // 7-day trend
+            
+            let score = multiplier * 10; // Base penalty for high premium
+            
+            // Trend Bonus
+            if (pct < 0) score += pct; // E.g., -15% drop = -15 score
+            
+            // Prestige Bonus
+            const stageLower = (row.stage || '').toLowerCase();
+            if (stageLower.includes('final') && !stageLower.includes('semi') && !stageLower.includes('quarter')) score -= 20;
+            else if (stageLower.includes('semi')) score -= 15;
+            else if (stageLower.includes('quarter')) score -= 10;
+            else if (stageLower.includes('16')) score -= 5;
+            
+            // Local Bonus
+            const isLocal = localCities.some(city => row.host_city && row.host_city.includes(city));
+            if (isLocal) score -= 10;
 
-        if (sorted.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No local deals found.</td></tr>';
+            return { row, score, multiplier, pct, isLocal };
+        });
+
+        // Sort by lowest score (best value)
+        scoredData.sort((a, b) => a.score - b.score);
+        const topPicks = scoredData.slice(0, 5);
+
+        if (topPicks.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No recommendations available.</td></tr>';
             return;
         }
 
-        sorted.forEach(row => {
+        topPicks.forEach(pick => {
+            const { row, multiplier, pct, isLocal } = pick;
             const tr = document.createElement('tr');
+            
             const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
             const daysUntil = calculateDaysUntil(row.date_time);
             const countdownHtml = daysUntil ? `<br><span class="countdown-badge">Starts in ${daysUntil} Days</span>` : '';
             const matchHtml = getFlagEmoji(row.match);
             
+            const opinionHtml = generateOpinion(row, multiplier, pct, isLocal);
+            
             tr.innerHTML = `
-                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small>${countdownHtml}</td>
-                <td>${row.host_city}</td>
-                <td class="price-cell">${priceStr}</td>
-                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link">Buy</a></td>
+                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.host_city}</small>${countdownHtml}</td>
+                <td class="price-cell">${priceStr}<br><span style="font-size:0.75rem; color:#64748b; font-weight:normal;">${multiplier.toFixed(1)}x Face</span></td>
+                <td>${opinionHtml}</td>
+                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link" style="padding: 6px 12px; font-size: 0.75rem;">Buy</a></td>
             `;
             tbody.appendChild(tr);
         });
