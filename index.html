@@ -39,6 +39,15 @@
     </header>
 
     <div class="container">
+        <!-- Target-hit alerts -->
+        <section id="alert-bar" class="alert-bar empty" aria-live="polite">
+            <div class="alert-bar-text">
+                <strong>🔔 Target hits:</strong>
+                <span id="alert-list"></span>
+            </div>
+            <button id="enable-notify" class="alert-bar-btn">Enable browser alerts</button>
+        </section>
+
         <!-- Summary Metrics -->
         <section class="metrics-grid">
             <div class="metric-card">
@@ -119,6 +128,7 @@
                             <button class="chart-toggle active" data-period="all">All</button>
                             <button class="chart-toggle" data-period="1m">1M</button>
                             <button class="chart-toggle" data-period="1w">1W</button>
+                            <button class="chart-toggle" data-period="1d">1D</button>
                         </div>
                     </div>
                 </div>
@@ -126,6 +136,7 @@
                     <div style="flex: 1;"><strong>24h:</strong> <span id="chart-24h">-</span></div>
                     <div style="flex: 1;"><strong>7d:</strong> <span id="chart-7d">-</span></div>
                     <div style="flex: 1;"><strong>Vs Target:</strong> <span id="chart-target-dist">-</span></div>
+                    <div style="flex: 1;"><strong>Signal:</strong> <span id="chart-signal">-</span></div>
                 </div>
                 <div style="position: relative; height: 250px; width: 100%;">
                     <canvas id="trendChart"></canvas>
@@ -167,6 +178,7 @@
                             <th>Match & Date</th>
                             <th>Venue</th>
                             <th>Price & Target</th>
+                            <th>Signal</th>
                             <th>Face Multiplier</th>
                             <th>Family Cost</th>
                             <th>Family Fit</th>
@@ -175,7 +187,7 @@
                         </tr>
                     </thead>
                     <tbody id="all-matches-body">
-                        <tr><td colspan="8" class="text-center">Loading data...</td></tr>
+                        <tr><td colspan="9" class="text-center">Loading data...</td></tr>
                     </tbody>
                 </table>
             </div>

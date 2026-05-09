@@ -19,6 +19,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
 
+    // --- User targets (per-match overrides, persisted in localStorage) ---
+    const TARGETS_KEY = 'wcm.userTargets.v1';
+    function loadUserTargets() {
+        try { return JSON.parse(localStorage.getItem(TARGETS_KEY) || '{}'); } catch { return {}; }
+    }
+    function saveUserTargets(t) { localStorage.setItem(TARGETS_KEY, JSON.stringify(t)); }
+    let userTargets = loadUserTargets();
+
+    // --- Notification de-dupe (so we only fire once per (match, target, price)) ---
+    const SEEN_KEY = 'wcm.seenHits.v1';
+    function loadSeen() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); } }
+    function saveSeen(s) { localStorage.setItem(SEEN_KEY, JSON.stringify([...s])); }
+
     // --- DOM Elements ---
     const searchInput = document.getElementById('search-input');
     const stageFilter = document.getElementById('stage-filter');
@@ -90,11 +103,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function getDecision(currentPrice, targetPrice) {
+    function getDecision(currentPrice, targetPrice, signal) {
         if (!currentPrice) return 'Unknown';
-        if (currentPrice <= targetPrice) return 'Buy';
-        if (currentPrice <= targetPrice * 1.5) return 'Watch';
+        if (currentPrice <= targetPrice) {
+            // At/below target — strongest buy when also at recent floor or rising
+            return 'Buy';
+        }
+        if (currentPrice <= targetPrice * 1.15) {
+            // 15% above target — only Watch unless still declining (then Wait — let it drop)
+            if (signal === 'Declining') return 'Wait';
+            return 'Watch';
+        }
+        if (currentPrice <= targetPrice * 1.5) {
+            return 'Watch';
+        }
         return 'Avoid';
+    }
+
+    // --- Trend signal from price history ---
+    // Returns one of: 'Near low', 'Declining', 'Rising', 'Volatile', 'Stable', 'No data'
+    function computeSignal(eventId, currentPrice) {
+        if (!currentPrice) return { signal: 'No data', mean: null, min: null, std: null, cv: 0 };
+        const series = historyByEvent.get(String(eventId)) || [];
+        if (series.length < 2) return { signal: 'No data', mean: null, min: null, std: null, cv: 0 };
+
+        const now = Date.now();
+        const day = 86400000;
+        let window = series.filter(p => now - p.t.getTime() <= 7 * day);
+        if (window.length < 3) window = series.filter(p => now - p.t.getTime() <= 30 * day);
+        if (window.length < 2) window = series;
+
+        const prices = window.map(p => p.price);
+        const mean = prices.reduce((s,v) => s+v, 0) / prices.length;
+        const min = Math.min(...prices);
+        const variance = prices.reduce((s,v) => s + (v-mean)*(v-mean), 0) / prices.length;
+        const std = Math.sqrt(variance);
+        const cv = mean ? std / mean : 0;
+
+        let signal = 'Stable';
+        if (cv > 0.08) signal = 'Volatile';
+        else if (currentPrice <= min * 1.05) signal = 'Near low';
+        else if (mean && currentPrice < mean * 0.97) signal = 'Declining';
+        else if (mean && currentPrice > mean * 1.03) signal = 'Rising';
+        return { signal, mean, min, std, cv };
     }
 
     function getFamilyFit(row) {
@@ -185,8 +236,17 @@ document.addEventListener('DOMContentLoaded', () => {
             
             row.fv = getFaceValue(row.stage);
             row.multiplier = lowestPrice ? lowestPrice / row.fv : 0;
-            row.target_price = getTargetPrice(row, lowestPrice, row.fv);
-            row.decision = getDecision(lowestPrice, row.target_price);
+            const computedTarget = getTargetPrice(row, lowestPrice, row.fv);
+            const userTarget = userTargets[row.event_id];
+            row.target_price = (userTarget != null && !isNaN(userTarget) && userTarget > 0) ? Number(userTarget) : computedTarget;
+            row.target_is_custom = userTarget != null && !isNaN(userTarget) && userTarget > 0;
+
+            const sig = computeSignal(row.event_id, lowestPrice);
+            row.signal = sig.signal;
+            row.signal_mean = sig.mean;
+            row.signal_min = sig.min;
+
+            row.decision = getDecision(lowestPrice, row.target_price, row.signal);
             row.family_cost = lowestPrice ? (lowestPrice * fcTickets) + fcParking + fcFood : 0;
             row.family_fit = getFamilyFit(row);
             row.reason = generateReason(row, row.multiplier, row.decision, row.family_fit);
@@ -243,6 +303,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function initDashboard() {
         populateFilters();
         
+        // Enable browser notifications for target hits
+        const notifyBtn = document.getElementById('enable-notify');
+        if (notifyBtn) {
+            notifyBtn.addEventListener('click', () => {
+                if (!('Notification' in window)) { alert('Browser notifications not supported.'); return; }
+                Notification.requestPermission().then(p => {
+                    if (p === 'granted') {
+                        try { new Notification('🔔 Alerts enabled', { body: 'You will be notified when matches hit your target price.' }); } catch (e) {}
+                        renderAlertBar();
+                    }
+                });
+            });
+        }
+
         btnUpdateCost.addEventListener('click', () => {
             fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
             fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
@@ -290,8 +364,58 @@ document.addEventListener('DOMContentLoaded', () => {
     function refreshDashboard() {
         renderMetrics();
         renderDecisionBoard();
+        renderAlertBar();
         populateMatchSelector();
         applyFilters();
+    }
+
+    // --- Signal badge helper ---
+    function getSignalBadge(signal) {
+        const map = {
+            'Near low':   { cls: 'signal-low',    label: 'Near low' },
+            'Declining':  { cls: 'signal-down',   label: 'Declining' },
+            'Rising':     { cls: 'signal-up',     label: 'Rising' },
+            'Volatile':   { cls: 'signal-vol',    label: 'Volatile' },
+            'Stable':     { cls: 'signal-stable', label: 'Stable' },
+            'No data':    { cls: 'signal-stable', label: 'No data' },
+        };
+        const m = map[signal] || map['No data'];
+        return `<span class="badge ${m.cls}">${m.label}</span>`;
+    }
+
+    // --- Target-hit alert bar + browser Notifications ---
+    function renderAlertBar() {
+        const bar = document.getElementById('alert-bar');
+        const list = document.getElementById('alert-list');
+        if (!bar || !list) return;
+        const hits = allData.filter(r => r.agg_lowest_price && r.target_price && r.agg_lowest_price <= r.target_price);
+        if (hits.length === 0) {
+            bar.classList.add('empty');
+            list.innerHTML = '';
+            return;
+        }
+        bar.classList.remove('empty');
+        hits.sort((a,b) => (a.agg_lowest_price/a.target_price) - (b.agg_lowest_price/b.target_price));
+        const top = hits.slice(0, 6);
+        list.innerHTML = top.map(r =>
+            `<a href="${r.agg_best_url}" target="_blank" rel="noopener">${r.match} $${r.agg_lowest_price}</a>`
+        ).join(' · ') + (hits.length > 6 ? ` <em>(+${hits.length - 6} more)</em>` : '');
+
+        if ('Notification' in window && Notification.permission === 'granted') {
+            const seen = loadSeen();
+            for (const r of hits) {
+                const key = `${r.event_id}:${Math.round(r.target_price)}:${Math.round(r.agg_lowest_price)}`;
+                if (seen.has(key)) continue;
+                try {
+                    new Notification(`🎯 Target hit: ${r.match}`, {
+                        body: `$${r.agg_lowest_price} on ${r.agg_source} — your target $${Math.round(r.target_price)}`,
+                        tag: String(r.event_id),
+                    });
+                } catch (e) { /* ignore */ }
+                seen.add(key);
+            }
+            saveSeen(seen);
+        }
     }
 
     function getActivePeriod() {
@@ -392,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderDecisionBoard() {
         const tbody = document.getElementById('decision-board-body');
         tbody.innerHTML = '';
-        
+
         const watchlistData = allData.filter(r => r.agg_lowest_price && (
             localCities.some(c => r.host_city && r.host_city.includes(c)) || isStrongMatch(r.match)
         ));
@@ -404,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const top10 = watchlistData.slice(0, 10);
-        
+
         if(top10.length === 0) {
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">No matches on watchlist.</td></tr>';
             return;
@@ -412,10 +536,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         top10.forEach(row => {
             const tr = document.createElement('tr');
+            const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span> ' : '';
             tr.innerHTML = `
                 <td><strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
-                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">Target: $${Math.round(row.target_price)}</small></td>
-                <td style="font-size:0.8rem; color:#475569;">${row.reason}</td>
+                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">${customMark}Target: $${Math.round(row.target_price)}</small></td>
+                <td style="font-size:0.8rem; color:#475569;">${getSignalBadge(row.signal)}<br>${row.reason}</td>
                 <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
@@ -466,16 +591,16 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No matches found matching criteria.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No matches found matching criteria.</td></tr>';
             return;
         }
 
         data.forEach(row => {
             const tr = document.createElement('tr');
-            
+
             const matchHtml = getFlagEmoji(row.match);
             const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
-            const targetStr = row.target_price ? `$${Math.round(row.target_price).toLocaleString()}` : 'N/A';
+            const targetVal = row.target_price ? Math.round(row.target_price) : '';
             const famCostStr = row.family_cost ? `$${row.family_cost.toLocaleString()}` : 'N/A';
             const ppCostStr = row.family_cost ? `($${Math.round(row.family_cost/fcTickets)}/pp)` : '';
 
@@ -484,10 +609,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.family_fit === 'Hard with Kids') fitColor = '#d97706';
             if (row.family_fit === 'Not Worth Travel') fitColor = '#dc2626';
 
+            const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span>' : '';
+
             tr.innerHTML = `
                 <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}</small></td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td class="price-cell">${priceStr}<br><small style="color:#64748b; font-weight:normal;">Target: ${targetStr}</small></td>
+                <td class="price-cell">${priceStr}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span></td>
+                <td>${getSignalBadge(row.signal)}</td>
                 <td><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></td>
                 <td><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
@@ -495,6 +623,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
+        });
+
+        // Bind editable target inputs
+        tbody.querySelectorAll('input.target-input').forEach(input => {
+            input.addEventListener('change', e => {
+                const id = e.target.dataset.eventId;
+                const val = Number(e.target.value);
+                if (!isNaN(val) && val > 0) userTargets[id] = val;
+                else delete userTargets[id];
+                saveUserTargets(userTargets);
+                processAggregatedData();
+                refreshDashboard();
+                // Re-render chart side-panel target dist if shown match changed
+                updateChart(currentChartIndex, getActivePeriod());
+            });
+            input.addEventListener('click', e => e.stopPropagation());
         });
     }
 
@@ -534,6 +678,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             document.getElementById('chart-target-dist').textContent = '-';
         }
+
+        const sigEl = document.getElementById('chart-signal');
+        if (sigEl) sigEl.innerHTML = getSignalBadge(row.signal || 'No data');
 
         const series = historyByEvent.get(String(row.event_id)) || [];
 
