@@ -600,15 +600,19 @@ document.addEventListener('DOMContentLoaded', () => {
             setWarning(true, 'No ticket data loaded. Do not make a purchase decision from this page yet.');
             return;
         }
-        const firstRow = snapshot[0];
-        const observedAtStr = firstRow.latest_observed_at;
-        if (!observedAtStr) {
+        const latestObservedMs = snapshot
+            .map(row => row.latest_observed_at)
+            .filter(Boolean)
+            .map(value => new Date(value).getTime())
+            .filter(value => !isNaN(value))
+            .sort((a, b) => b - a)[0];
+        if (!latestObservedMs) {
             badge.textContent = 'Unknown';
             badge.className = 'health-badge health-unknown';
             setWarning(true, 'Data timestamp is missing. Verify prices on the ticket site before buying.');
             return;
         }
-        const observedAt = new Date(observedAtStr);
+        const observedAt = new Date(latestObservedMs);
         const now = new Date();
         const diffMins = (now - observedAt) / 60000;
 
