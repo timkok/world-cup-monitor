@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     let allData = [];
     let tickpickData = [];
+    let fifaMarketplaceData = [];
     let historyByEvent = new Map();
     let trendChartInstance = null;
     let currentChartIndex = 0;
@@ -77,6 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function saveUserTargets(t) { localStorage.setItem(TARGETS_KEY, JSON.stringify(t)); }
     let userTargets = loadUserTargets();
+
+    // --- FIFA availability + resale price observations (manual + CSV, persisted) ---
+    const FIFA_KEY = 'wcm.fifaData.v1';
+    function loadFifaData() { try { return JSON.parse(localStorage.getItem(FIFA_KEY) || '[]'); } catch { return []; } }
+    function saveFifaData(d) { localStorage.setItem(FIFA_KEY, JSON.stringify(d)); }
+    let fifaEntries = loadFifaData();
 
     // --- Notification de-dupe (so we only fire once per (match, target, price)) ---
     const SEEN_KEY = 'wcm.seenHits.v1';
@@ -283,6 +290,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function findFifaMarketplaceRow(sgRow) {
+        return fifaMarketplaceData.find(r => String(r.event_id) === String(sgRow.event_id)) || null;
+    }
+
+    function latestManualFifaPrice(eventId) {
+        const entries = fifaEntries
+            .filter(e => String(e.event_id) === String(eventId) && e.resale_price_usd != null && !isNaN(Number(e.resale_price_usd)))
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        if (!entries.length) return null;
+        const latest = entries[0];
+        return {
+            price: Number(latest.resale_price_usd),
+            observed_at: latest.timestamp,
+            status: latest.status,
+            url: latest.url || 'https://www.fifa.com/tickets',
+            note: 'Manual official FIFA resale observation',
+        };
+    }
+
     // --- Core Logic Engine ---
     function getFaceValue(stage) {
         const s = (stage || '').toLowerCase();
@@ -459,6 +485,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!sgId) continue;
             add(sgId, new Date(r.observed_at), r.low_price_usd, 'VS');
         }
+        for (const r of fifaMarketplaceData) {
+            if (r.event_id == null || r.low_price_usd == null) continue;
+            add(r.event_id, new Date(r.observed_at), r.low_price_usd, 'FIFA');
+        }
+        for (const e of fifaEntries) {
+            if (e.event_id == null || e.resale_price_usd == null) continue;
+            add(e.event_id, new Date(e.timestamp), e.resale_price_usd, 'FIFA');
+        }
         for (const arr of historyByEvent.values()) arr.sort((a, b) => a.t - b.t);
     }
 
@@ -483,17 +517,23 @@ document.addEventListener('DOMContentLoaded', () => {
         allData.forEach(row => {
             const tpMatch = matchTickPick(row, tickpickData);
             const vsMatch = matchVivid(row, vividData);
+            const fifaMarket = findFifaMarketplaceRow(row);
+            const manualFifa = latestManualFifaPrice(row.event_id);
             const sgPrice = row.latest_low_usd != null && !isNaN(row.latest_low_usd) ? Number(row.latest_low_usd) : null;
             const tpPrice = tpMatch && tpMatch.low_price_usd != null ? Number(tpMatch.low_price_usd) : null;
             const vsPrice = vsMatch && vsMatch.low_price_usd != null ? Number(vsMatch.low_price_usd) : null;
+            const csvFifaPrice = fifaMarket && fifaMarket.low_price_usd != null && !isNaN(fifaMarket.low_price_usd) ? Number(fifaMarket.low_price_usd) : null;
+            const fifaPrice = manualFifa ? manualFifa.price : csvFifaPrice;
             row.tp_event_id = tpMatch ? tpMatch.tickpick_event_id : null;
             row.vs_event_id = vsMatch ? vsMatch.vivid_event_id : null;
 
-            // Pick the cheapest non-null price across the three platforms.
+            // Pick the cheapest non-null price across marketplaces, including
+            // official FIFA resale when a verified/manual price is available.
             const candidates = [
                 { src: 'SeatGeek', price: sgPrice, url: row.url },
                 { src: 'TickPick', price: tpPrice, url: tpMatch ? tpMatch.url : null },
                 { src: 'Vivid',    price: vsPrice, url: vsMatch ? vsMatch.url : null },
+                { src: 'FIFA',     price: fifaPrice, url: manualFifa?.url || fifaMarket?.url || 'https://www.fifa.com/tickets' },
             ].filter(c => c.price != null);
             let lowestPrice = null, bestUrl = row.url, bestSource = 'N/A';
             if (candidates.length) {
@@ -512,6 +552,11 @@ document.addEventListener('DOMContentLoaded', () => {
             row.tp_url = tpMatch ? tpMatch.url : null;
             row.vs_price = vsPrice;
             row.vs_url = vsMatch ? vsMatch.url : null;
+            row.fifa_price = fifaPrice;
+            row.fifa_url = manualFifa?.url || fifaMarket?.url || 'https://www.fifa.com/tickets';
+            row.fifa_status = manualFifa?.status || fifaMarket?.availability || '';
+            row.fifa_verified = !!(manualFifa || csvFifaPrice != null);
+            row.fifa_note = manualFifa?.note || fifaMarket?.note || 'Official resale marketplace currently requires waiting-room/CAPTCHA or login verification.';
             
             row.fv = getFaceValue(row.stage);
             row.multiplier = lowestPrice ? lowestPrice / row.fv : 0;
@@ -587,15 +632,17 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchCsv('tickpick_history.csv').catch(() => []),
             fetchCsv('tickpick_data.csv').catch(() => []),
             fetchCsv('vivid_data.csv').catch(() => []),
+            fetchCsv('fifa_marketplace_data.csv').catch(() => []),
             fetchCsv('price_history.csv').catch(() => []),
             fetchCsv('vivid_history.csv').catch(() => []),
             fetchAliases(),
         ])
-            .then(([snapshot, tpHistory, tpSnapshot, vsSnapshot, sgHistory, vsHistory]) => {
+            .then(([snapshot, tpHistory, tpSnapshot, vsSnapshot, fifaSnapshot, sgHistory, vsHistory]) => {
                 allData = snapshot;
                 checkDataHealth(snapshot);
                 tickpickData = tpSnapshot;
                 vividData = vsSnapshot || [];
+                fifaMarketplaceData = fifaSnapshot || [];
                 sgRawHistory = sgHistory || [];
                 tpRawHistory = tpHistory || [];
                 vsRawHistory = vsHistory || [];
@@ -857,7 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Price Confidence ---
     function getPriceConfidence(row) {
-        const prices = [row.sg_price, row.tp_price, row.vs_price].filter(p => p != null);
+        const prices = [row.sg_price, row.tp_price, row.vs_price, row.fifa_price].filter(p => p != null);
         if (prices.length >= 3) {
             const spread = Math.max(...prices) - Math.min(...prices);
             const avg = prices.reduce((a,b) => a+b, 0) / prices.length;
@@ -911,6 +958,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 `<a href="${row.vs_url}" target="_blank" rel="noopener" ` +
                 `class="src-tag src-vs${isBest ? ' src-best' : ''}" ` +
                 `title="Open on Vivid Seats">VS ${formatMoney(row.vs_price)}${isBest ? ' ★' : ''}</a>`
+            );
+        }
+        if (row.fifa_price != null) {
+            const isBest = cheapestSource === 'FIFA';
+            items.push(
+                `<a href="${row.fifa_url || 'https://www.fifa.com/tickets'}" target="_blank" rel="noopener" ` +
+                `class="src-tag src-fifa${isBest ? ' src-best' : ''}" ` +
+                `title="${escapeAttr(row.fifa_note || 'Official FIFA Resale/Exchange Marketplace')}">FIFA ${formatMoney(row.fifa_price)}${isBest ? ' ★' : ''}</a>`
+            );
+        } else {
+            items.push(
+                `<a href="${row.fifa_url || 'https://www.fifa.com/tickets'}" target="_blank" rel="noopener" ` +
+                `class="src-tag src-fifa-missing" ` +
+                `title="Official resale price not verified in this snapshot; FIFA marketplace may require waiting-room/CAPTCHA/login.">FIFA check</a>`
             );
         }
         if (!items.length) return '<span style="color:#94a3b8;font-size:0.78rem;">No source available</span>';
@@ -1384,7 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
         grad.addColorStop(1, 'rgba(37, 99, 235, 0.02)');
 
         // Source color per point so multi-source observations are visually distinguishable.
-        const srcToColor = src => src === 'TP' ? '#0d4c8a' : src === 'VS' ? '#9d174d' : '#b45309';
+        const srcToColor = src => src === 'TP' ? '#0d4c8a' : src === 'VS' ? '#9d174d' : src === 'FIFA' ? '#166534' : '#b45309';
         const pointColors = filtered.map(p => srcToColor(p.src));
 
         trendChartInstance = new Chart(ctx, {
@@ -1473,12 +1534,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveNotes(n) { localStorage.setItem(NOTES_KEY, JSON.stringify(n)); }
     let userNotes = loadNotes();
 
-    // --- FIFA availability data (manual entries, persisted in localStorage) ---
-    const FIFA_KEY = 'wcm.fifaData.v1';
-    function loadFifaData() { try { return JSON.parse(localStorage.getItem(FIFA_KEY) || '[]'); } catch { return []; } }
-    function saveFifaData(d) { localStorage.setItem(FIFA_KEY, JSON.stringify(d)); }
-    let fifaEntries = loadFifaData();
-
     // --- Payment checklist persistence ---
     const CHK_KEY = 'wcm.checklist.v1';
     function loadChecklist() { try { return JSON.parse(localStorage.getItem(CHK_KEY) || '{}'); } catch { return {}; } }
@@ -1537,6 +1592,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const statusSel = document.getElementById('fifa-status-select');
             const qualitySel = document.getElementById('fifa-quality-select');
             const qtyEl = document.getElementById('fifa-qty');
+            const priceEl = document.getElementById('fifa-price-usd');
             const cats = [];
             if (document.getElementById('fifa-cat1').checked) cats.push('CAT1');
             if (document.getElementById('fifa-cat2').checked) cats.push('CAT2');
@@ -1550,10 +1606,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 categories: cats,
                 quality: qualitySel.value,
                 qty: parseInt(qtyEl.value) || 0,
+                resale_price_usd: priceEl && priceEl.value ? Number(String(priceEl.value).replace(/[$,]/g, '')) : null,
+                url: 'https://www.fifa.com/tickets',
                 timestamp: new Date().toISOString(),
             };
             fifaEntries.push(entry);
             saveFifaData(fifaEntries);
+            processAggregatedData();
+            buildMergedHistory();
+            applySignalsAndDecisions();
+            refreshDashboard();
             renderFifaTable();
             checkMassDrop();
         });
@@ -1642,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${(latest.categories || []).join(', ') || '-'}</td>
                 <td>${getQualityLabel(latest.quality)}</td>
                 <td>${pattern}</td>
-                <td><small>${new Date(latest.timestamp).toLocaleString()}</small></td>
+                <td><small>${new Date(latest.timestamp).toLocaleString()}</small>${latest.resale_price_usd ? `<br><strong>FIFA ${formatMoney(latest.resale_price_usd)}</strong>` : ''}</td>
                 <td>${getActionBadge(action)}</td>
                 <td><span class="${risk.cls}">${risk.label}</span><br><small style="color:#94a3b8;">${risk.detail}</small></td>
             `;

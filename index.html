@@ -19,7 +19,7 @@
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=personal-20260509">
+    <link rel="stylesheet" href="style.css?v=personal-fifa-20260509">
     <script>
       // Unregister old service worker to fix aggressive caching
       if ('serviceWorker' in navigator) {
@@ -223,10 +223,14 @@
         <!-- Official FIFA Drop Monitor (collapsible) -->
         <section class="fifa-section">
             <div class="section-header" style="cursor:pointer;" id="fifa-toggle-header">
-                <h2>🏟️ Official FIFA Drop Monitor <span id="fifa-toggle-arrow" style="font-size:0.8rem;">▼</span></h2>
-                <p>Manual tracking of FIFA official ticket availability. Click to expand.</p>
+                <h2>🏟️ Official FIFA Drop & Resale Monitor <span id="fifa-toggle-arrow" style="font-size:0.8rem;">▼</span></h2>
+                <p>Official availability and FIFA Resale/Exchange Marketplace prices. Click to expand.</p>
             </div>
             <div id="fifa-content" style="display:none;">
+                <div class="fifa-source-note">
+                    Official resale prices are used in the main table when verified. If FIFA shows a waiting room, CAPTCHA, or login wall, the row is labeled <strong>FIFA check</strong> until you log a price here or the daily data file contains one.
+                    <a href="https://www.fifa.com/tickets" target="_blank" rel="noopener">Open FIFA.com/tickets</a>
+                </div>
                 <!-- Payment Prep Checklist -->
                 <details class="prep-checklist" open>
                     <summary><strong>💳 Pre-Drop Checklist</strong></summary>
@@ -249,7 +253,7 @@
                                 <th>Categories</th>
                                 <th>Drop Quality</th>
                                 <th>Pattern</th>
-                                <th>Last Seen</th>
+                                <th>Last Seen / Official Resale</th>
                                 <th>Action</th>
                                 <th>Trip Risk</th>
                             </tr>
@@ -284,6 +288,7 @@
                             <option value="stable_supply">Stable Supply</option>
                         </select>
                         <input type="number" id="fifa-qty" placeholder="Qty" min="1" value="2" style="width:55px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
+                        <input type="text" id="fifa-price-usd" placeholder="FIFA resale $" inputmode="numeric" pattern="[0-9,]*" style="width:115px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
                         <button id="fifa-log-btn" class="btn-link" style="padding:6px 14px;">Log</button>
                     </div>
                 </div>
@@ -293,6 +298,6 @@
 
 
     <!-- Custom JS -->
-    <script src="app.js?v=personal-20260509"></script>
+    <script src="app.js?v=personal-fifa-20260509"></script>
 </body>
 </html>
