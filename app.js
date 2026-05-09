@@ -31,6 +31,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const prefix = n > 0 ? '+' : '-';
         return `${prefix}${formatMoney(Math.abs(n))}`;
     }
+
+    function escapeAttr(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function distanceToTargetHtml(row) {
+        if (!row.agg_lowest_price || !row.target_price) return '';
+        const diff = row.agg_lowest_price - row.target_price;
+        if (diff <= 0) {
+            return `<div class="target-distance target-below">${formatMoney(Math.abs(diff))} below target</div>`;
+        }
+        return `<div class="target-distance target-above">${formatMoney(diff)} above target</div>`;
+    }
+
+    function isTargetHit(row) {
+        return !!(row.agg_lowest_price && row.target_price && row.agg_lowest_price <= row.target_price);
+    }
+
+    function isLocalMatch(row) {
+        return localCities.some(c => row.host_city && row.host_city.includes(c));
+    }
+
+    function actionSortScore(row) {
+        if (isPinned(String(row.event_id))) return 0;
+        if (isTargetHit(row)) return 1;
+        if (row.decision === 'Buy') return 2;
+        if (isLocalMatch(row) && (row.decision === 'Watch' || row.decision === 'Wait')) return 3;
+        if (shouldCheckFifa(row) && row.decision !== 'Avoid') return 4;
+        if (row.decision === 'Avoid') return 6;
+        return 5;
+    }
     
     let currentSortCol = 'decision';
     let currentSortDir = 'asc';
@@ -815,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
             txt.textContent = `\u274c No local buy today. All East Coast matches are >50% above target.`;
             el.classList.add('action-none');
         } else {
-            txt.textContent = `\ud83d\udc40 Watch only. No matches at target yet. Keep monitoring.`;
+            txt.textContent = `No must-buy today — watch only.`;
             el.classList.add('action-none');
         }
     }
@@ -1052,8 +1087,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ));
 
         const sortWL = (arr) => arr.sort((a,b) => {
-            if (a.decision === 'Buy' && b.decision !== 'Buy') return -1;
-            if (a.decision !== 'Buy' && b.decision === 'Buy') return 1;
+            const score = actionSortScore(a) - actionSortScore(b);
+            if (score !== 0) return score;
             return (a.agg_lowest_price/a.target_price) - (b.agg_lowest_price/b.target_price);
         });
         sortWL(pinned);
@@ -1084,14 +1119,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (pinned.length > 0) {
             const header = document.createElement('tr');
-            header.innerHTML = '<td colspan="4" style="background:#fef9c3;font-weight:600;font-size:0.85rem;padding:6px 12px;">📌 Pinned</td>';
+            header.innerHTML = '<td colspan="4" style="background:#fef9c3;font-weight:600;font-size:0.85rem;padding:6px 12px;">📌 Pinned Watchlist</td>';
             tbody.appendChild(header);
             pinned.forEach(row => tbody.appendChild(renderWLRow(row, true)));
         }
 
         if (auto.length > 0) {
             const header = document.createElement('tr');
-            header.innerHTML = '<td colspan="4" style="background:#f0f9ff;font-weight:600;font-size:0.85rem;padding:6px 12px;">🤖 Auto (Local + Strong Teams)</td>';
+            header.innerHTML = '<td colspan="4" style="background:#f0f9ff;font-weight:600;font-size:0.85rem;padding:6px 12px;">🤖 Auto Watchlist</td>';
             tbody.appendChild(header);
             auto.slice(0, 10).forEach(row => tbody.appendChild(renderWLRow(row, false)));
         }
@@ -1153,19 +1188,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return matchesSearch && matchesStage && matchesRegion && matchesQuick;
         });
 
-        // Apply Sorting — decision priority first by default
-        // "Best Action" order: matches needing FIFA check first, then Buy, Watch, Wait, Avoid
-        const decisionOrder = { 'Buy': 0, 'Wait': 1, 'Watch': 2, 'Unknown': 3, 'Avoid': 4 };
+        // Apply Sorting — personal action priority first by default:
+        // Pinned → Target Hit → Buy → Cheapest Local Watch → Check FIFA First → Avoid.
         filtered.sort((a, b) => {
             let valA, valB;
             if (currentSortCol === 'decision') {
-                // FIFA-first priority boost: matches >3x that should check FIFA go up
-                const fA = shouldCheckFifa(a) && a.decision !== 'Buy' ? -0.5 : 0;
-                const fB = shouldCheckFifa(b) && b.decision !== 'Buy' ? -0.5 : 0;
-                valA = (decisionOrder[a.decision] ?? 3) + fA;
-                valB = (decisionOrder[b.decision] ?? 3) + fB;
+                valA = actionSortScore(a);
+                valB = actionSortScore(b);
                 if (valA !== valB) return currentSortDir === 'asc' ? valA - valB : valB - valA;
-                // Secondary: price ascending within same decision
+                const ratioA = a.agg_lowest_price && a.target_price ? a.agg_lowest_price / a.target_price : 999;
+                const ratioB = b.agg_lowest_price && b.target_price ? b.agg_lowest_price / b.target_price : 999;
+                if (ratioA !== ratioB) return ratioA - ratioB;
                 return (a.agg_lowest_price || 999999) - (b.agg_lowest_price || 999999);
             } else if (currentSortCol === 'match') {
                 valA = a.match || '';
@@ -1218,6 +1251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.family_fit === 'Hard with Kids') fitColor = '#d97706';
             if (row.family_fit === 'Not Worth Travel') fitColor = '#dc2626';
             const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span>' : '';
+            const distToTarget = distanceToTargetHtml(row);
 
             // Calculate 24h trend
             const ch24 = calculateDynamicChange(row, 1);
@@ -1234,13 +1268,13 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td data-label="Match"><div><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></div></td>
                 <td data-label="Venue">${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±' + formatMoney(conf.spread) : ''}</span></div></div></td>
+                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span>${distToTarget}<div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±' + formatMoney(conf.spread) : ''}</span></div></div></td>
                 <td data-label="Signal">${getSignalBadge(row.signal)}</td>
                 <td data-label="Multiplier"><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small><br><span class="${budgetSt.cls}">${budgetSt.label}</span></div></td>
                 <td data-label="Family fit" class="family-col"><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
                 <td data-label="Reason" style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}${shouldCheckFifa(row) ? '<br><span class="fifa-first-badge">Check FIFA first</span>' : ''}</td>
-                <td data-label="Notes"><input type="text" class="note-input" data-event-id="${row.event_id}" value="${(userNotes[row.event_id] || '').replace(/"/g, '&quot;')}" placeholder="Add note..."></td>
+                <td data-label="Notes"><input type="text" class="note-input" data-event-id="${row.event_id}" value="${escapeAttr(userNotes[row.event_id])}" placeholder="Add note..."></td>
                 <td data-label="Decision" style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
@@ -1265,6 +1299,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Bind notes inputs
         tbody.querySelectorAll('input.note-input').forEach(input => {
+            input.addEventListener('input', e => {
+                const id = e.target.dataset.eventId;
+                const val = e.target.value.trim();
+                if (val) userNotes[id] = val;
+                else delete userNotes[id];
+                saveNotes(userNotes);
+            });
             input.addEventListener('change', e => {
                 const id = e.target.dataset.eventId;
                 const val = e.target.value.trim();
@@ -1619,7 +1660,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const window30m = 30 * 60000;
         const window10m = 10 * 60000;
         const recentAvailable = fifaEntries.filter(e =>
-            (e.status === 'available' || e.status === 'limited') &&
+            e.status === 'available' &&
             (now - new Date(e.timestamp).getTime()) < window30m
         );
         const uniqueMatches = new Set(recentAvailable.map(e => e.event_id));

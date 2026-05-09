@@ -19,7 +19,7 @@
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=44be4a3">
+    <link rel="stylesheet" href="style.css?v=personal-20260509">
     <script>
       // Unregister old service worker to fix aggressive caching
       if ('serviceWorker' in navigator) {
@@ -61,6 +61,7 @@
 
         <!-- Today's Action Summary Banner -->
         <section id="action-summary" class="action-summary">
+            <span class="action-summary-label">Today’s Action</span>
             <span id="action-summary-text">Analyzing...</span>
         </section>
 
@@ -89,8 +90,8 @@
             <!-- Left: Top Deals -->
             <section class="mini-table-section flex-1">
                 <div class="section-header">
-                    <h2>📋 My Watchlist</h2>
-                    <p>📌 Pinned + 🤖 Auto (Local & Strong Teams)</p>
+                    <h2>📋 Watchlist</h2>
+                    <p>Manual pins first, then auto-ranked local and strong-team matches.</p>
                 </div>
                 <div class="table-responsive">
                     <table class="data-table" id="priority-deals-table">
@@ -292,6 +293,6 @@
 
 
     <!-- Custom JS -->
-    <script src="app.js?v=44be4a3"></script>
+    <script src="app.js?v=personal-20260509"></script>
 </body>
 </html>
