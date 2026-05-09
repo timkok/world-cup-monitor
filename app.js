@@ -356,7 +356,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Team tax
         if (isStrongMatch(row.match)) parts.push('strong teams');
 
-        return parts.join('. ');
+        // Cap to max 2 phrases
+        return parts.slice(0, 2).join('. ');
     }
 
     // Build per-SG-event merged time series from price_history.csv (SG),
@@ -631,11 +632,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refreshDashboard() {
+        renderSummaryBanner();
         renderMetrics();
         renderDecisionBoard();
         renderAlertBar();
         populateMatchSelector();
         applyFilters();
+    }
+
+    // --- Today's Action Summary Banner ---
+    function renderSummaryBanner() {
+        const el = document.getElementById('action-summary');
+        const txt = document.getElementById('action-summary-text');
+        if (!el || !txt) return;
+        const validRows = allData.filter(d => d.agg_lowest_price != null);
+        const hits = validRows.filter(r => r.agg_lowest_price && r.target_price && r.agg_lowest_price <= r.target_price);
+        const mlRows = validRows.filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
+        const mlClose = mlRows.filter(r => r.agg_lowest_price <= r.target_price * 1.15);
+        const localRows = validRows.filter(r => localCities.some(c => r.host_city && r.host_city.includes(c)));
+        const allLocalExpensive = localRows.length > 0 && localRows.every(r => r.agg_lowest_price > r.target_price * 1.5);
+
+        el.className = 'action-summary';
+        if (hits.length > 0) {
+            const best = hits.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price)[0];
+            txt.textContent = `\u2705 Target hit: ${best.match} at $${best.agg_lowest_price} (target $${Math.round(best.target_price)}). Check now!`;
+            el.classList.add('action-buy');
+        } else if (mlClose.length > 0) {
+            const best = mlClose.sort((a,b) => a.agg_lowest_price/a.target_price - b.agg_lowest_price/b.target_price)[0];
+            txt.textContent = `\ud83c\udfdf\ufe0f MetLife close to target: ${best.match} at $${best.agg_lowest_price} (target $${Math.round(best.target_price)}). Watch closely.`;
+        } else if (allLocalExpensive) {
+            txt.textContent = `\u274c No local buy today. All East Coast matches are >50% above target.`;
+            el.classList.add('action-none');
+        } else {
+            txt.textContent = `\ud83d\udc40 Watch only. No matches at target yet. Keep monitoring.`;
+            el.classList.add('action-none');
+        }
+    }
+
+    // --- Price Confidence ---
+    function getPriceConfidence(row) {
+        const prices = [row.sg_price, row.tp_price, row.vs_price].filter(p => p != null);
+        if (prices.length >= 3) {
+            const spread = Math.max(...prices) - Math.min(...prices);
+            const avg = prices.reduce((a,b) => a+b, 0) / prices.length;
+            if (spread / avg <= 0.10) return { label: 'High', cls: 'conf-high', spread };
+            return { label: 'Med', cls: 'conf-med', spread };
+        }
+        if (prices.length === 2) {
+            const spread = Math.abs(prices[0] - prices[1]);
+            return { label: 'Med', cls: 'conf-med', spread };
+        }
+        return { label: 'Low', cls: 'conf-low', spread: 0 };
+    }
+
+    // --- Budget Status ---
+    let familyBudget = parseInt(localStorage.getItem('wcm.budget')) || 1000;
+    function getBudgetStatus(familyCost) {
+        if (!familyCost) return { label: '', cls: '' };
+        if (familyCost <= familyBudget) return { label: 'Within Budget', cls: 'budget-ok' };
+        if (familyCost <= familyBudget * 1.25) return { label: 'Slightly Over', cls: 'budget-over' };
+        return { label: 'Too Expensive', cls: 'budget-no' };
+    }
+
+    // --- Check FIFA First logic ---
+    function shouldCheckFifa(row) {
+        return row.multiplier > 3 || row.decision === 'Watch' || row.decision === 'Avoid' || row.decision === 'Wait';
     }
 
     // --- Source links: show every platform we found a price on ---
@@ -742,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentPrice = row.agg_lowest_price || row.latest_low_usd;
         if (!currentPrice) return { change: 0, pct: 0 };
 
-        const series = historyByEvent.get(String(row.tp_event_id)) || [];
+        const series = historyByEvent.get(String(row.event_id)) || [];
         if (series.length <= 1) return { change: 0, pct: 0 };
 
         let comparePoint;
@@ -1004,15 +1065,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 trendHtml = `<span style="color:#16a34a; font-size:0.8rem; font-weight:bold;">↘ (-$${Math.abs(Math.round(ch24.change))})</span>`;
             }
 
+            const conf = getPriceConfidence(row);
+            const budgetSt = getBudgetStatus(row.family_cost);
+
             tr.innerHTML = `
                 <td data-label="Match"><div><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></div></td>
                 <td data-label="Venue">${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)}</div></div></td>
+                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±$'+Math.round(conf.spread) : ''}</span></div></div></td>
                 <td data-label="Signal">${getSignalBadge(row.signal)}</td>
                 <td data-label="Multiplier"><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
-                <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></div></td>
+                <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small><br><span class="${budgetSt.cls}">${budgetSt.label}</span></div></td>
                 <td data-label="Family fit" class="family-col"><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
-                <td data-label="Reason" style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}</td>
+                <td data-label="Reason" style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}${shouldCheckFifa(row) ? '<br><span class="fifa-first-badge">Check FIFA first</span>' : ''}</td>
                 <td data-label="Notes"><input type="text" class="note-input" data-event-id="${row.event_id}" value="${(userNotes[row.event_id] || '').replace(/"/g, '&quot;')}" placeholder="Add note..."></td>
                 <td data-label="Decision" style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
@@ -1089,7 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sigEl = document.getElementById('chart-signal');
         if (sigEl) sigEl.innerHTML = getSignalBadge(row.signal || 'No data');
 
-        const series = historyByEvent.get(String(row.tp_event_id)) || [];
+        const series = historyByEvent.get(String(row.event_id)) || [];
 
         let filtered = series;
         if (period === '1w') {
