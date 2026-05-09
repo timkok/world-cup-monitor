@@ -566,9 +566,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
                 fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
                 fcFood = parseInt(document.getElementById('fc-food').value) || 120;
+                familyBudget = parseInt(document.getElementById('family-budget-input').value) || 1000;
                 localStorage.setItem('fcTickets', fcTickets);
                 localStorage.setItem('fcParking', fcParking);
                 localStorage.setItem('fcFood', fcFood);
+                localStorage.setItem('wcm.budget', familyBudget);
                 processAggregatedData();
                 buildMergedHistory();
                 applySignalsAndDecisions();
