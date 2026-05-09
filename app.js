@@ -62,6 +62,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const monthMap = {'Jan':'01', 'Feb':'02', 'Mar':'03', 'Apr':'04', 'May':'05', 'Jun':'06', 'Jul':'07', 'Aug':'08', 'Sep':'09', 'Oct':'10', 'Nov':'11', 'Dec':'12'};
 
+    function normalizeString(str) {
+        if (!str) return '';
+        return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function extractTeams(str) {
+        if (!str) return [];
+        const parts = str.toLowerCase().split(/vs\.?/);
+        if (parts.length === 2) {
+            return [normalizeString(parts[0]), normalizeString(parts[1])];
+        }
+        return [];
+    }
+
+    function extractMatchNumber(str) {
+        if (!str) return null;
+        const m = str.match(/match\s+(\d+)/i);
+        return m ? m[1] : null;
+    }
+
     function matchTickPick(sgRow, tpData) {
         if(!sgRow.date_time) return null;
         const match = sgRow.date_time.match(/,\s*([A-Za-z]+)\s*(\d+)/);
@@ -70,10 +90,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const day = String(match[2]).padStart(2, '0');
         const sgDateStr = `2026-${month}-${day}`;
         
-        return tpData.find(tpRow => 
-            tpRow.start_date && tpRow.start_date.startsWith(sgDateStr) && 
-            tpRow.venue && sgRow.venue && tpRow.venue.includes(sgRow.venue)
-        );
+        const sgTeams = extractTeams(sgRow.match);
+        const sgMatchNum = extractMatchNumber(sgRow.match);
+
+        return tpData.find(tpRow => {
+            if (!tpRow.start_date || !tpRow.start_date.startsWith(sgDateStr)) return false;
+            
+            // 1. Try to match by Match Number
+            const tpMatchNum = extractMatchNumber(tpRow.name);
+            if (sgMatchNum && tpMatchNum && sgMatchNum === tpMatchNum) return true;
+
+            // 2. Try to match by Teams
+            if (sgTeams.length === 2) {
+                const normTpName = normalizeString(tpRow.name);
+                if (normTpName.includes(sgTeams[0]) && normTpName.includes(sgTeams[1])) {
+                    return true;
+                }
+            }
+
+            // 3. Fallback to Venue matching
+            if (tpRow.venue && sgRow.venue) {
+                const tpV = normalizeString(tpRow.venue);
+                const sgV = normalizeString(sgRow.venue);
+                if (tpV.includes(sgV) || sgV.includes(tpV)) return true;
+            }
+
+            return false;
+        });
     }
 
     // --- Core Logic Engine ---
