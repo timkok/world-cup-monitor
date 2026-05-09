@@ -316,6 +316,10 @@ document.addEventListener('DOMContentLoaded', () => {
             row.agg_lowest_price = lowestPrice;
             row.agg_best_url = bestUrl;
             row.agg_source = bestSource;
+            row.sg_price = sgPrice != null && !isNaN(sgPrice) ? sgPrice : null;
+            row.sg_url = row.url;
+            row.tp_price = tpPrice != null && !isNaN(tpPrice) ? tpPrice : null;
+            row.tp_url = tpMatch ? tpMatch.url : null;
             
             row.fv = getFaceValue(row.stage);
             row.multiplier = lowestPrice ? lowestPrice / row.fv : 0;
@@ -493,6 +497,30 @@ document.addEventListener('DOMContentLoaded', () => {
         applyFilters();
     }
 
+    // --- Source links: show every platform we found a price on ---
+    function renderSources(row) {
+        const items = [];
+        const cheapestSource = row.agg_source;
+        if (row.sg_price != null && row.sg_url) {
+            const isBest = cheapestSource === 'SeatGeek' || cheapestSource === 'Both';
+            items.push(
+                `<a href="${row.sg_url}" target="_blank" rel="noopener" ` +
+                `class="src-tag src-sg${isBest ? ' src-best' : ''}" ` +
+                `title="Open on SeatGeek">SG $${Math.round(row.sg_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+            );
+        }
+        if (row.tp_price != null && row.tp_url) {
+            const isBest = cheapestSource === 'TickPick' || cheapestSource === 'Both';
+            items.push(
+                `<a href="${row.tp_url}" target="_blank" rel="noopener" ` +
+                `class="src-tag src-tp${isBest ? ' src-best' : ''}" ` +
+                `title="Open on TickPick">TP $${Math.round(row.tp_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+            );
+        }
+        if (!items.length) return '<span style="color:#94a3b8;font-size:0.78rem;">No source available</span>';
+        return `<span class="src-row">${items.join('')}</span>`;
+    }
+
     // --- Signal badge helper ---
     function getSignalBadge(signal) {
         const map = {
@@ -663,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const customMark = row.target_is_custom ? '<span class="custom-mark" title="Custom target">★</span> ' : '';
             tr.innerHTML = `
                 <td><strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
-                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">${customMark}Target: $${Math.round(row.target_price)}</small></td>
+                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">${customMark}Target: $${Math.round(row.target_price)}</small><div style="margin-top:4px;">${renderSources(row)}</div></td>
                 <td style="font-size:0.8rem; color:#475569;">${getSignalBadge(row.signal)}<br>${row.reason}</td>
                 <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
@@ -775,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td class="price-cell">${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span></td>
+                <td class="price-cell">${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)}</div></td>
                 <td>${getSignalBadge(row.signal)}</td>
                 <td><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></td>
