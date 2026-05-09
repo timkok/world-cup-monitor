@@ -116,6 +116,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return m ? m[1] : null;
     }
 
+    // Generic match-by-date+teams helper: tries match number, then teams, then venue.
+    function matchByDateAndTeams(sgRow, candidateRows, nameField, venueField) {
+        if (!sgRow.date_time) return null;
+        const m = sgRow.date_time.match(/,\s*([A-Za-z]+)\s*(\d+)/);
+        if (!m) return null;
+        const month = monthMap[m[1].substring(0,3)];
+        const day = String(m[2]).padStart(2, '0');
+        const sgDateStr = `2026-${month}-${day}`;
+        const sgTeams = extractTeams(sgRow.match);
+        const sgMatchNum = extractMatchNumber(sgRow.match);
+
+        return candidateRows.find(r => {
+            if (!r.start_date || !String(r.start_date).startsWith(sgDateStr)) return false;
+            const rName = r[nameField] || '';
+            const rMatchNum = extractMatchNumber(rName);
+            if (sgMatchNum && rMatchNum && sgMatchNum === rMatchNum) return true;
+            if (sgTeams.length === 2) {
+                const norm = normalizeString(rName);
+                if (norm.includes(sgTeams[0]) && norm.includes(sgTeams[1])) return true;
+            }
+            const sgV = normalizeString(sgRow.venue);
+            const rV = normalizeString(r[venueField]);
+            if (sgV && rV && (sgV.includes(rV) || rV.includes(sgV))) return true;
+            return false;
+        });
+    }
+
+    function matchVivid(sgRow, vsData) {
+        return matchByDateAndTeams(sgRow, vsData, 'name', 'venue');
+    }
+
     function matchTickPick(sgRow, tpData) {
         if(!sgRow.date_time) return null;
         const match = sgRow.date_time.match(/,\s*([A-Za-z]+)\s*(\d+)/);
@@ -289,37 +320,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function processAggregatedData() {
         allData.forEach(row => {
-            let tpMatch = matchTickPick(row, tickpickData);
-            let sgPrice = row.latest_low_usd;
-            let tpPrice = tpMatch ? tpMatch.low_price_usd : null;
+            const tpMatch = matchTickPick(row, tickpickData);
+            const vsMatch = matchVivid(row, vividData);
+            const sgPrice = row.latest_low_usd != null && !isNaN(row.latest_low_usd) ? Number(row.latest_low_usd) : null;
+            const tpPrice = tpMatch && tpMatch.low_price_usd != null ? Number(tpMatch.low_price_usd) : null;
+            const vsPrice = vsMatch && vsMatch.low_price_usd != null ? Number(vsMatch.low_price_usd) : null;
             row.tp_event_id = tpMatch ? tpMatch.tickpick_event_id : null;
 
-            let lowestPrice = sgPrice;
-            let bestUrl = row.url;
-            let bestSource = "SeatGeek";
-
-            if (tpPrice && (!lowestPrice || tpPrice < lowestPrice)) {
-                lowestPrice = tpPrice;
-                bestUrl = tpMatch.url;
-                bestSource = "TickPick";
-            } else if (tpPrice && lowestPrice && tpPrice === lowestPrice) {
-                bestSource = "Both";
-            } else if (!sgPrice && tpPrice) {
-                lowestPrice = tpPrice;
-                bestUrl = tpMatch.url;
-                bestSource = "TickPick";
-            } else if (!sgPrice && !tpPrice) {
-                lowestPrice = null;
-                bestSource = "N/A";
+            // Pick the cheapest non-null price across the three platforms.
+            const candidates = [
+                { src: 'SeatGeek', price: sgPrice, url: row.url },
+                { src: 'TickPick', price: tpPrice, url: tpMatch ? tpMatch.url : null },
+                { src: 'Vivid',    price: vsPrice, url: vsMatch ? vsMatch.url : null },
+            ].filter(c => c.price != null);
+            let lowestPrice = null, bestUrl = row.url, bestSource = 'N/A';
+            if (candidates.length) {
+                candidates.sort((a, b) => a.price - b.price);
+                lowestPrice = candidates[0].price;
+                bestUrl = candidates[0].url;
+                bestSource = candidates[0].src;
             }
 
             row.agg_lowest_price = lowestPrice;
             row.agg_best_url = bestUrl;
             row.agg_source = bestSource;
-            row.sg_price = sgPrice != null && !isNaN(sgPrice) ? sgPrice : null;
+            row.sg_price = sgPrice;
             row.sg_url = row.url;
-            row.tp_price = tpPrice != null && !isNaN(tpPrice) ? tpPrice : null;
+            row.tp_price = tpPrice;
             row.tp_url = tpMatch ? tpMatch.url : null;
+            row.vs_price = vsPrice;
+            row.vs_url = vsMatch ? vsMatch.url : null;
             
             row.fv = getFaceValue(row.stage);
             row.multiplier = lowestPrice ? lowestPrice / row.fv : 0;
@@ -345,15 +375,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Bootstrapping ---
+    let vividData = [];
+
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
             fetchCsv('tickpick_history.csv').catch(() => []),
             fetchCsv('tickpick_data.csv').catch(() => []),
+            fetchCsv('vivid_data.csv').catch(() => []),
         ])
-            .then(([snapshot, history, tpSnapshot]) => {
+            .then(([snapshot, history, tpSnapshot, vsSnapshot]) => {
                 allData = snapshot;
                 tickpickData = tpSnapshot;
+                vividData = vsSnapshot || [];
 
                 historyByEvent = new Map();
                 for (const row of history) {
@@ -515,6 +549,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 `<a href="${row.tp_url}" target="_blank" rel="noopener" ` +
                 `class="src-tag src-tp${isBest ? ' src-best' : ''}" ` +
                 `title="Open on TickPick">TP $${Math.round(row.tp_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+            );
+        }
+        if (row.vs_price != null && row.vs_url) {
+            const isBest = cheapestSource === 'Vivid';
+            items.push(
+                `<a href="${row.vs_url}" target="_blank" rel="noopener" ` +
+                `class="src-tag src-vs${isBest ? ' src-best' : ''}" ` +
+                `title="Open on Vivid Seats">VS $${Math.round(row.vs_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
             );
         }
         if (!items.length) return '<span style="color:#94a3b8;font-size:0.78rem;">No source available</span>';

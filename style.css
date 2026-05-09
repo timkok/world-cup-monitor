@@ -327,6 +327,7 @@ h1, h2, h3, h4 { color: var(--primary-color); }
 .src-tag:hover { text-decoration: none; filter: brightness(0.95); }
 .src-sg { background: #fff1d6; color: #8b5a00; border-color: #fde68a; }
 .src-tp { background: #dceeff; color: #0d4c8a; border-color: #bfdbfe; }
+.src-vs { background: #fde2f3; color: #9d174d; border-color: #fbcfe8; }
 .src-best { box-shadow: 0 0 0 2px #16a34a55; font-weight: 700; }
 
 /* Trend signal badges */

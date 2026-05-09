@@ -1,0 +1,43 @@
+name: Hourly Vivid Seats scrape
+
+on:
+  schedule:
+    - cron: '30 * * * *'  # offset from SeatGeek (:00) and TickPick (:15)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vivid-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Vivid Seats scraper
+        run: python vivid_scraper.py
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add vivid_data.csv vivid_history.csv
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: vivid price update $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
