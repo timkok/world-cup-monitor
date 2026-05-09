@@ -39,9 +39,7 @@ USER_AGENT = (
 # Performer / category landing pages to crawl for event links.
 # Multiple in case Vivid changes URLs or splits by stage.
 SEED_URLS = [
-    "https://www.vividseats.com/fifa-world-cup-tickets--sports-soccer/performer/137001",
-    "https://www.vividseats.com/fifa-world-cup-2026-tickets",
-    "https://www.vividseats.com/concerts/fifa-world-cup-tickets.html",
+    "https://www.vividseats.com/world-cup-soccer-tickets--sports-soccer/performer/944",
 ]
 
 # Vivid event URLs look like /<slug>-tickets-<MM>-<DD>-<YYYY>-<venue>/production/<eventId>
