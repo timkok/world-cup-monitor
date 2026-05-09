@@ -2,7 +2,7 @@ name: Vivid Seats scrape (15-min)
 
 on:
   schedule:
-    - cron: '10,25,40,55 * * * *'  # every 15 min, Vivid slot (offset from SG :00 and TP :05)
+    - cron: '4-59/5 * * * *'  # every 5 min offset +4 from SG
   workflow_dispatch:
 
 permissions:

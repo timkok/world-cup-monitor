@@ -2,7 +2,7 @@ name: TickPick scrape (15-min)
 
 on:
   schedule:
-    - cron: '5,20,35,50 * * * *'  # every 15 min, TP slot (offset from SG :00 and Vivid :10)
+    - cron: '2-57/5 * * * *'  # every 5 min offset +2 from SG
   workflow_dispatch:
 
 permissions:
