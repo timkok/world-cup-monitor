@@ -91,30 +91,95 @@ h1, h2, h3, h4 { color: var(--primary-color); }
 /* Metrics Grid */
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
 }
 
 .metric-card {
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 20px;
-    text-align: center;
+    padding: 14px 14px 12px;
+    text-align: left;
 }
 
 .metric-card h3 {
-    font-size: 2rem;
-    margin-bottom: 5px;
+    font-size: 1rem;
+    margin-bottom: 0;
     color: var(--primary-color);
 }
 
 .metric-card p {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    font-weight: 500;
+    font-size: 0.72rem;
+    color: #64748b;
+    font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0;
+    margin-bottom: 9px;
+}
+.decision-card {
+    min-height: 148px;
+    border-top: 4px solid #94a3b8;
+}
+.decision-card.card-buy { border-top-color: #16a34a; background: linear-gradient(180deg, #f0fdf4 0%, var(--secondary-color) 65%); }
+.decision-card.card-watch { border-top-color: #2563eb; background: linear-gradient(180deg, #eff6ff 0%, var(--secondary-color) 65%); }
+.decision-card.card-wait { border-top-color: #f59e0b; background: linear-gradient(180deg, #fffbeb 0%, var(--secondary-color) 65%); }
+.decision-card.card-avoid { border-top-color: #dc2626; background: linear-gradient(180deg, #fef2f2 0%, var(--secondary-color) 65%); }
+.kpi-action,
+.kpi-match,
+.kpi-price,
+.kpi-sub,
+.kpi-delta {
+    display: block;
+}
+.kpi-action {
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+.kpi-action.muted { color: #64748b; }
+.kpi-match {
+    color: #0f172a;
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.25;
+    min-height: 34px;
+}
+.kpi-match a {
+    color: inherit;
+    text-decoration: none;
+}
+.kpi-match a:hover { text-decoration: underline; }
+.kpi-price {
+    color: #0f172a;
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-top: 7px;
+}
+.kpi-sub {
+    color: #64748b;
+    font-size: 0.75rem;
+    line-height: 1.25;
+    margin-top: 3px;
+}
+.kpi-delta {
+    font-size: 0.74rem;
+    font-weight: 700;
+    margin-top: 6px;
+}
+.kpi-delta.good { color: #15803d; }
+.kpi-delta.bad { color: #b91c1c; }
+
+@media (max-width: 1080px) {
+    .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+    .metrics-grid { grid-template-columns: 1fr; }
+    .decision-card { min-height: 0; }
 }
 
 /* Strategy Callout */

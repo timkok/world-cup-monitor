@@ -41,6 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/>/g, '&gt;');
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     function distanceToTargetHtml(row) {
         if (!row.agg_lowest_price || !row.target_price) return '';
         const diff = row.agg_lowest_price - row.target_price;
@@ -1110,34 +1117,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMetrics() {
         const validRows = allData.filter(d => d.agg_lowest_price != null && !isNaN(d.agg_lowest_price));
-        
-        // Today's Buy: best buy-decision match
-        const buys = validRows.filter(r => r.decision === 'Buy');
-        buys.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
+
+        function setCardState(id, state) {
+            const card = document.getElementById(id);
+            if (!card) return;
+            card.classList.remove('card-buy', 'card-watch', 'card-wait', 'card-avoid');
+            if (state) card.classList.add(state);
+        }
+
+        function cityShort(row) {
+            return (row.host_city || '').replace('New York / New Jersey', 'MetLife').split(',')[0];
+        }
+
+        function targetLine(row) {
+            if (!row || !row.target_price || !row.agg_lowest_price) return '';
+            const diff = row.agg_lowest_price - row.target_price;
+            const cls = diff <= 0 ? 'good' : 'bad';
+            const label = diff <= 0 ? `${formatMoney(Math.abs(diff))} below target` : `${formatMoney(diff)} above target`;
+            return `<span class="kpi-delta ${cls}">${label}</span>`;
+        }
+
+        function matchLink(row, label) {
+            const href = escapeAttr(row.agg_best_url || row.url || '#');
+            return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+        }
+
+        function compactMatchName(row) {
+            const name = escapeHtml(row.match || 'Unknown match');
+            return name.length > 34 ? `${name.slice(0, 33)}…` : name;
+        }
+
+        const buys = validRows
+            .filter(r => r.decision === 'Buy' || isTargetHit(r))
+            .sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
         const bestBuy = buys[0];
+        setCardState('metric-card-buy', bestBuy ? 'card-buy' : 'card-wait');
         document.getElementById('metric-best-buy').innerHTML = bestBuy
-            ? `<span style="font-size:0.85rem">${bestBuy.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(bestBuy.agg_lowest_price)}</span><br><small style="color:#64748b">Target ${formatMoney(bestBuy.target_price)}</small>`
-            : '<span style="color:#94a3b8">None today</span>';
+            ? `<span class="kpi-action">Buy candidate</span><span class="kpi-match">${matchLink(bestBuy, compactMatchName(bestBuy))}</span><span class="kpi-price">${formatMoney(bestBuy.agg_lowest_price)}</span><span class="kpi-sub">Target ${formatMoney(bestBuy.target_price)} · ${escapeHtml(bestBuy.agg_source)}</span>${targetLine(bestBuy)}`
+            : `<span class="kpi-action muted">No must-buy</span><span class="kpi-match">Watch only today</span><span class="kpi-price">Hold</span><span class="kpi-sub">No match is at target</span>`;
 
-        // Cheapest Driveable
-        const locals = validRows.filter(r => localCities.some(c => r.host_city && r.host_city.includes(c)));
-        locals.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price);
+        const locals = validRows
+            .filter(r => isLocalMatch(r))
+            .sort((a,b) => a.agg_lowest_price - b.agg_lowest_price);
         const cheapLocal = locals[0];
+        setCardState('metric-card-local', cheapLocal && cheapLocal.decision === 'Buy' ? 'card-buy' : 'card-watch');
         document.getElementById('metric-cheapest-local').innerHTML = cheapLocal
-            ? `<span style="font-size:0.85rem">${cheapLocal.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(cheapLocal.agg_lowest_price)}</span><br><small style="color:#64748b">${cheapLocal.host_city.split(',')[0]}</small>`
-            : 'N/A';
+            ? `<span class="kpi-action">Cheapest nearby</span><span class="kpi-match">${matchLink(cheapLocal, compactMatchName(cheapLocal))}</span><span class="kpi-price">${formatMoney(cheapLocal.agg_lowest_price)}</span><span class="kpi-sub">${escapeHtml(cityShort(cheapLocal))} · ${escapeHtml(cheapLocal.family_fit)}</span>${targetLine(cheapLocal)}`
+            : `<span class="kpi-action muted">No local data</span><span class="kpi-match">Check sources</span><span class="kpi-price">N/A</span>`;
 
-        // Best MetLife Watch
-        const metlife = validRows.filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
-        metlife.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
+        const metlife = validRows
+            .filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)))
+            .sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
         const bestML = metlife[0];
+        const mlState = bestML && bestML.agg_lowest_price <= bestML.target_price ? 'card-buy' : (bestML && bestML.agg_lowest_price <= bestML.target_price * 1.15 ? 'card-watch' : 'card-wait');
+        setCardState('metric-card-metlife', mlState);
         document.getElementById('metric-best-metlife').innerHTML = bestML
-            ? `<span style="font-size:0.85rem">${bestML.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(bestML.agg_lowest_price)}</span><br><small style="color:#64748b">Target ${formatMoney(bestML.target_price)}</small>`
-            : 'N/A';
+            ? `<span class="kpi-action">${bestML.agg_lowest_price <= bestML.target_price * 1.15 ? 'Close enough to watch' : 'Still expensive'}</span><span class="kpi-match">${matchLink(bestML, compactMatchName(bestML))}</span><span class="kpi-price">${formatMoney(bestML.agg_lowest_price)}</span><span class="kpi-sub">Target ${formatMoney(bestML.target_price)} · MetLife</span>${targetLine(bestML)}`
+            : `<span class="kpi-action muted">No MetLife data</span><span class="kpi-match">Check FIFA first</span><span class="kpi-price">N/A</span>`;
 
-        // Do Not Buy count
-        const avoids = validRows.filter(r => r.decision === 'Avoid').length;
-        document.getElementById('metric-avoid-count').innerHTML = `<span style="font-size:1.5rem;font-weight:700">${avoids}</span><br><small style="color:#64748b">of ${validRows.length} matches</small>`;
+        const avoids = validRows.filter(r => r.decision === 'Avoid');
+        const overpricedPct = validRows.length ? Math.round(avoids.length / validRows.length * 100) : 0;
+        const localNearTarget = locals.filter(r => r.agg_lowest_price <= r.target_price * 1.15).length;
+        const heatState = overpricedPct >= 50 ? 'card-avoid' : (localNearTarget > 0 ? 'card-watch' : 'card-wait');
+        setCardState('metric-card-market', heatState);
+        document.getElementById('metric-avoid-count').innerHTML =
+            `<span class="kpi-action">${overpricedPct >= 50 ? 'Mostly overpriced' : 'Selective market'}</span><span class="kpi-match">${localNearTarget} nearby match${localNearTarget === 1 ? '' : 'es'} near target</span><span class="kpi-price">${avoids.length}/${validRows.length}</span><span class="kpi-sub">Do Not Buy rows · ${overpricedPct}%</span><span class="kpi-delta ${overpricedPct >= 50 ? 'bad' : 'good'}">${overpricedPct >= 50 ? 'Default: wait' : 'Check shortlist'}</span>`;
     }
 
     function renderDecisionBoard() {
