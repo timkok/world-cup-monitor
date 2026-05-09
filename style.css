@@ -146,6 +146,7 @@ h1, h2, h3, h4 { color: var(--primary-color); }
 /* Tables */
 .table-responsive {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border: 1px solid var(--border-color);
     border-radius: 8px;
 }
@@ -381,4 +382,9 @@ h1, h2, h3, h4 { color: var(--primary-color); }
     font-weight: 600;
     margin-top: 4px;
     display: inline-block;
+}
+
+/* Toggle Family Columns */
+#all-matches-table.hide-family-cols .family-col {
+    display: none;
 }

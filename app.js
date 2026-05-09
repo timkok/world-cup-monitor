@@ -125,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (s.includes('final') && !s.includes('semi') && !s.includes('quarter')) return 600;
         if (s.includes('semi')) return 400;
         if (s.includes('quarter')) return 250;
-        if (s.includes('16') || s.includes('32')) return 150;
-        return 70; // Group stage
+        if (s.includes('16') || s.includes('32')) return 175;
+        return 175; // Group stage (East Coast realistic minimum for 2026)
     }
 
     function isStrongMatch(matchName) {
@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function computeSignal(eventId, currentPrice) {
         if (!currentPrice) return { signal: 'No data', mean: null, min: null, std: null, cv: 0 };
         const series = historyByEvent.get(String(eventId)) || [];
-        if (series.length < 2) return { signal: 'No data', mean: null, min: null, std: null, cv: 0 };
+        if (series.length <= 1) return { signal: 'No data', mean: null, min: null, std: null, cv: 0 };
 
         const now = Date.now();
         const day = 86400000;
@@ -217,8 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const stageLower = (row.stage || '').toLowerCase();
             const isSemiOrFinal = stageLower.includes('final') || stageLower.includes('semi');
 
-            if (isLate || isBoston || isToronto) return "Hard with Kids";
-            if (isMetlifePhilly && isWeekend && isDaytime) return "Family Friendly";
+            if (isLate || isToronto) return "Hard with Kids";
+            if (isEastCoast && isWeekend && isDaytime) return "Family Friendly";
             if (!isEastCoast && !isToronto && !isSemiOrFinal) return "Not Worth Travel";
             
             return "Moderate";
@@ -236,9 +236,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (multiplier > 10) reason = `Absurdly overpriced (${multiplier.toFixed(1)}x face).`;
             else reason = `Too expensive vs face value.`;
         } else if (decision === 'Buy') {
-            reason = `Hitting target price! ${multiplier.toFixed(1)}x face.`;
+            if (row.signal === 'No data') reason = `Below target price (new listing).`;
+            else reason = `Hitting target price! ${multiplier.toFixed(1)}x face.`;
         } else {
-            reason = `Close to target. Keep watching.`;
+            if (row.signal === 'No data') reason = `New listing, watching.`;
+            else reason = `Close to target. Keep watching.`;
         }
 
         if (familyFit === 'Family Friendly') reason += ` Great local weekend trip.`;
@@ -256,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let tpMatch = matchTickPick(row, tickpickData);
             let sgPrice = row.latest_low_usd;
             let tpPrice = tpMatch ? tpMatch.low_price_usd : null;
+            row.tp_event_id = tpMatch ? tpMatch.tickpick_event_id : null;
 
             let lowestPrice = sgPrice;
             let bestUrl = row.url;
@@ -287,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
             row.target_price = (userTarget != null && !isNaN(userTarget) && userTarget > 0) ? Number(userTarget) : computedTarget;
             row.target_is_custom = userTarget != null && !isNaN(userTarget) && userTarget > 0;
 
-            const sig = computeSignal(row.event_id, lowestPrice);
+            const sig = computeSignal(row.tp_event_id, lowestPrice);
             row.signal = sig.signal;
             row.signal_mean = sig.mean;
             row.signal_min = sig.min;
@@ -307,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
-            fetchCsv('price_history.csv').catch(() => []),
+            fetchCsv('tickpick_history.csv').catch(() => []),
             fetchCsv('tickpick_data.csv').catch(() => []),
         ])
             .then(([snapshot, history, tpSnapshot]) => {
@@ -316,12 +319,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 historyByEvent = new Map();
                 for (const row of history) {
-                    if (row.event_id == null || row.low_usd == null) continue;
+                    if (row.tickpick_event_id == null || row.low_price_usd == null) continue;
                     const t = new Date(row.observed_at);
                     if (isNaN(t.getTime())) continue;
-                    const key = String(row.event_id);
+                    const key = String(row.tickpick_event_id);
                     if (!historyByEvent.has(key)) historyByEvent.set(key, []);
-                    historyByEvent.get(key).push({ t, price: Number(row.low_usd) });
+                    historyByEvent.get(key).push({ t, price: Number(row.low_price_usd) });
                 }
                 for (const arr of historyByEvent.values()) {
                     arr.sort((a, b) => a.t - b.t);
@@ -348,7 +351,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initDashboard() {
         populateFilters();
-        
+
+        const toggleFamilyBtn = document.getElementById('toggle-family-btn');
+        if (toggleFamilyBtn) {
+            toggleFamilyBtn.addEventListener('click', () => {
+                const table = document.getElementById('all-matches-table');
+                table.classList.toggle('hide-family-cols');
+                toggleFamilyBtn.textContent = table.classList.contains('hide-family-cols') ? 'Show Family Cols' : 'Hide Family Cols';
+                toggleFamilyBtn.style.backgroundColor = table.classList.contains('hide-family-cols') ? '#3b82f6' : '#94a3b8';
+            });
+        }        
         // Enable browser notifications for target hits
         const notifyBtn = document.getElementById('enable-notify');
         if (notifyBtn) {
@@ -482,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if ('Notification' in window && Notification.permission === 'granted') {
             const seen = loadSeen();
             for (const r of hits) {
-                const key = `${r.event_id}:${Math.round(r.target_price)}:${Math.round(r.agg_lowest_price)}`;
+                const key = `${r.event_id}:${Math.round(r.target_price)}`;
                 if (seen.has(key)) continue;
                 try {
                     new Notification(`🎯 Target hit: ${r.match}`, {
@@ -519,8 +531,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentPrice = row.agg_lowest_price || row.latest_low_usd;
         if (!currentPrice) return { change: 0, pct: 0 };
 
-        const series = historyByEvent.get(String(row.event_id)) || [];
-        if (series.length === 0) return { change: 0, pct: 0 };
+        const series = historyByEvent.get(String(row.tp_event_id)) || [];
+        if (series.length <= 1) return { change: 0, pct: 0 };
 
         let comparePoint;
         if (intervalDays === 'all') {
@@ -797,7 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sigEl = document.getElementById('chart-signal');
         if (sigEl) sigEl.innerHTML = getSignalBadge(row.signal || 'No data');
 
-        const series = historyByEvent.get(String(row.event_id)) || [];
+        const series = historyByEvent.get(String(row.tp_event_id)) || [];
 
         let filtered = series;
         if (period === '1w') {
