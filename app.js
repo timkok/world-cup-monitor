@@ -18,6 +18,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let fcFood = parseInt(localStorage.getItem('fcFood')) || 120;
 
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
+
+    function formatMoney(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return 'N/A';
+        return `$${Math.round(n).toLocaleString()}`;
+    }
+
+    function formatDelta(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n === 0) return '$0';
+        const prefix = n > 0 ? '+' : '-';
+        return `${prefix}${formatMoney(Math.abs(n))}`;
+    }
     
     let currentSortCol = 'decision';
     let currentSortDir = 'asc';
@@ -493,10 +506,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function checkDataHealth(snapshot) {
         const badge = document.getElementById('data-health-badge');
+        const warning = document.getElementById('stale-warning');
+        const warningText = document.getElementById('stale-warning-text');
+        const setWarning = (show, text = '') => {
+            if (!warning) return;
+            warning.style.display = show ? '' : 'none';
+            if (warningText && text) warningText.textContent = text;
+        };
         if (!badge) return;
         if (!snapshot || snapshot.length === 0) {
             badge.textContent = 'No Data';
             badge.className = 'health-badge health-stale';
+            setWarning(true, 'No ticket data loaded. Do not make a purchase decision from this page yet.');
             return;
         }
         const firstRow = snapshot[0];
@@ -504,6 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!observedAtStr) {
             badge.textContent = 'Unknown';
             badge.className = 'health-badge health-unknown';
+            setWarning(true, 'Data timestamp is missing. Verify prices on the ticket site before buying.');
             return;
         }
         const observedAt = new Date(observedAtStr);
@@ -514,10 +536,13 @@ document.addEventListener('DOMContentLoaded', () => {
             badge.textContent = '● Live';
             badge.className = 'health-badge health-ok';
             badge.title = `Last update: ${observedAt.toLocaleString()}`;
+            setWarning(false);
         } else {
             badge.textContent = '● Stale';
             badge.className = 'health-badge health-stale';
             badge.title = `Last update: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
+            const hours = Math.round(diffMins / 60);
+            setWarning(true, `Last ticket snapshot is about ${hours} hours old. Re-check live listings before buying.`);
         }
     }
 
@@ -781,11 +806,11 @@ document.addEventListener('DOMContentLoaded', () => {
         el.className = 'action-summary';
         if (hits.length > 0) {
             const best = hits.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price)[0];
-            txt.textContent = `\u2705 Target hit: ${best.match} at $${best.agg_lowest_price} (target $${Math.round(best.target_price)}). Check now!`;
+            txt.textContent = `\u2705 Buy now: ${best.match} at ${formatMoney(best.agg_lowest_price)} (target ${formatMoney(best.target_price)}). Check listings now.`;
             el.classList.add('action-buy');
         } else if (mlClose.length > 0) {
             const best = mlClose.sort((a,b) => a.agg_lowest_price/a.target_price - b.agg_lowest_price/b.target_price)[0];
-            txt.textContent = `\ud83c\udfdf\ufe0f MetLife close to target: ${best.match} at $${best.agg_lowest_price} (target $${Math.round(best.target_price)}). Watch closely.`;
+            txt.textContent = `\ud83c\udfdf\ufe0f Near target: ${best.match} at ${formatMoney(best.agg_lowest_price)} (target ${formatMoney(best.target_price)}). Watch closely.`;
         } else if (allLocalExpensive) {
             txt.textContent = `\u274c No local buy today. All East Coast matches are >50% above target.`;
             el.classList.add('action-none');
@@ -834,7 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
             items.push(
                 `<a href="${row.sg_url}" target="_blank" rel="noopener" ` +
                 `class="src-tag src-sg${isBest ? ' src-best' : ''}" ` +
-                `title="Open on SeatGeek">SG $${Math.round(row.sg_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+                `title="Open on SeatGeek">SG ${formatMoney(row.sg_price)}${isBest ? ' ★' : ''}</a>`
             );
         }
         if (row.tp_price != null && row.tp_url) {
@@ -842,7 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             items.push(
                 `<a href="${row.tp_url}" target="_blank" rel="noopener" ` +
                 `class="src-tag src-tp${isBest ? ' src-best' : ''}" ` +
-                `title="Open on TickPick">TP $${Math.round(row.tp_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+                `title="Open on TickPick">TP ${formatMoney(row.tp_price)}${isBest ? ' ★' : ''}</a>`
             );
         }
         if (row.vs_price != null && row.vs_url) {
@@ -850,7 +875,7 @@ document.addEventListener('DOMContentLoaded', () => {
             items.push(
                 `<a href="${row.vs_url}" target="_blank" rel="noopener" ` +
                 `class="src-tag src-vs${isBest ? ' src-best' : ''}" ` +
-                `title="Open on Vivid Seats">VS $${Math.round(row.vs_price).toLocaleString()}${isBest ? ' ★' : ''}</a>`
+                `title="Open on Vivid Seats">VS ${formatMoney(row.vs_price)}${isBest ? ' ★' : ''}</a>`
             );
         }
         if (!items.length) return '<span style="color:#94a3b8;font-size:0.78rem;">No source available</span>';
@@ -886,7 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hits.sort((a,b) => (a.agg_lowest_price/a.target_price) - (b.agg_lowest_price/b.target_price));
         const top = hits.slice(0, 6);
         list.innerHTML = top.map(r =>
-            `<a href="${r.agg_best_url}" target="_blank" rel="noopener">${r.match} $${r.agg_lowest_price}</a>`
+            `<a href="${r.agg_best_url}" target="_blank" rel="noopener">${r.match} ${formatMoney(r.agg_lowest_price)}</a>`
         ).join(' · ') + (hits.length > 6 ? ` <em>(+${hits.length - 6} more)</em>` : '');
 
         if ('Notification' in window && Notification.permission === 'granted') {
@@ -896,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (seen.has(key)) continue;
                 try {
                     new Notification(`🎯 Target hit: ${r.match}`, {
-                        body: `$${r.agg_lowest_price} on ${r.agg_source} — your target $${Math.round(r.target_price)}`,
+                        body: `${formatMoney(r.agg_lowest_price)} on ${r.agg_source} — your target ${formatMoney(r.target_price)}`,
                         tag: String(r.event_id),
                     });
                 } catch (e) { /* ignore */ }
@@ -978,8 +1003,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getDecisionBadge(decision, url) {
         if (decision === 'Buy') return `<a href="${url}" target="_blank" class="badge badge-buy" style="display:inline-block; padding:8px 12px; text-decoration:none;">BUY NOW</a>`;
-        if (decision === 'Watch' || decision === 'Wait') return `<a href="${url}" target="_blank" class="badge badge-monitor" style="display:inline-block; padding:6px 10px; text-decoration:none; background:#fef9c3; color:#854d0e; border:1px solid #fde047;">WATCH</a>`;
-        return `<span class="badge badge-wait" style="background:#f1f5f9; color:#94a3b8; border:1px solid #e2e8f0;">AVOID</span>`;
+        if (decision === 'Watch') return `<a href="${url}" target="_blank" class="badge badge-near" style="display:inline-block; padding:6px 10px; text-decoration:none;">NEAR TARGET</a>`;
+        if (decision === 'Wait') return `<a href="${url}" target="_blank" class="badge badge-wait-action" style="display:inline-block; padding:6px 10px; text-decoration:none;">WAIT</a>`;
+        return `<span class="badge badge-avoid">DO NOT BUY</span>`;
     }
 
     function renderMetrics() {
@@ -990,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
         buys.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
         const bestBuy = buys[0];
         document.getElementById('metric-best-buy').innerHTML = bestBuy
-            ? `<span style="font-size:0.85rem">${bestBuy.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${bestBuy.agg_lowest_price}</span><br><small style="color:#64748b">Target $${Math.round(bestBuy.target_price)}</small>`
+            ? `<span style="font-size:0.85rem">${bestBuy.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(bestBuy.agg_lowest_price)}</span><br><small style="color:#64748b">Target ${formatMoney(bestBuy.target_price)}</small>`
             : '<span style="color:#94a3b8">None today</span>';
 
         // Cheapest Driveable
@@ -998,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         locals.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price);
         const cheapLocal = locals[0];
         document.getElementById('metric-cheapest-local').innerHTML = cheapLocal
-            ? `<span style="font-size:0.85rem">${cheapLocal.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${cheapLocal.agg_lowest_price}</span><br><small style="color:#64748b">${cheapLocal.host_city.split(',')[0]}</small>`
+            ? `<span style="font-size:0.85rem">${cheapLocal.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(cheapLocal.agg_lowest_price)}</span><br><small style="color:#64748b">${cheapLocal.host_city.split(',')[0]}</small>`
             : 'N/A';
 
         // Best MetLife Watch
@@ -1006,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
         metlife.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
         const bestML = metlife[0];
         document.getElementById('metric-best-metlife').innerHTML = bestML
-            ? `<span style="font-size:0.85rem">${bestML.match}</span><br><span style="font-size:1.1rem;font-weight:700">$${bestML.agg_lowest_price}</span><br><small style="color:#64748b">Target $${Math.round(bestML.target_price)}</small>`
+            ? `<span style="font-size:0.85rem">${bestML.match}</span><br><span style="font-size:1.1rem;font-weight:700">${formatMoney(bestML.agg_lowest_price)}</span><br><small style="color:#64748b">Target ${formatMoney(bestML.target_price)}</small>`
             : 'N/A';
 
         // Do Not Buy count
@@ -1043,13 +1069,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `<button class="pin-btn" data-eid="${row.event_id}" title="Pin to watchlist">☆</button>`;
             const distToTarget = row.agg_lowest_price && row.target_price
                 ? (row.agg_lowest_price <= row.target_price
-                    ? `<span style="color:#16a34a;font-size:0.78rem;">$${Math.abs(Math.round(row.agg_lowest_price - row.target_price))} below</span>`
-                    : `<span style="color:#dc2626;font-size:0.78rem;">$${Math.round(row.agg_lowest_price - row.target_price)} above</span>`)
+                    ? `<span style="color:#16a34a;font-size:0.78rem;">${formatMoney(Math.abs(row.agg_lowest_price - row.target_price))} below</span>`
+                    : `<span style="color:#dc2626;font-size:0.78rem;">${formatMoney(row.agg_lowest_price - row.target_price)} above</span>`)
                 : '';
             const pinReasonHtml = pinned && pinReason ? `<br><small style="color:#a78bfa;font-style:italic;">${pinReason}</small>` : '';
             tr.innerHTML = `
                 <td>${pinBtn} <strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small>${pinReasonHtml}</td>
-                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b;">${customMark}Target: $${Math.round(row.target_price)}</small><br>${distToTarget}</td>
+                <td class="price-cell">${formatMoney(row.agg_lowest_price)}<br><small style="color:#64748b;">${customMark}Target: ${formatMoney(row.target_price)}</small><br>${distToTarget}</td>
                 <td style="font-size:0.8rem; color:#475569;">${getSignalBadge(row.signal)}<br>${row.reason}</td>
                 <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
@@ -1182,10 +1208,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
 
             const matchHtml = getFlagEmoji(row.match);
-            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
+            const priceStr = row.agg_lowest_price ? formatMoney(row.agg_lowest_price) : 'N/A';
             const targetVal = row.target_price ? Math.round(row.target_price) : '';
-            const famCostStr = row.family_cost ? `$${row.family_cost.toLocaleString()}` : 'N/A';
-            const ppCostStr = row.family_cost ? `($${Math.round(row.family_cost/fcTickets)}/pp)` : '';
+            const famCostStr = row.family_cost ? formatMoney(row.family_cost) : 'N/A';
+            const ppCostStr = row.family_cost ? `(${formatMoney(row.family_cost/fcTickets)}/pp)` : '';
 
             let fitColor = '#64748b';
             if (row.family_fit === 'Family Friendly') fitColor = '#059669';
@@ -1197,9 +1223,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const ch24 = calculateDynamicChange(row, 1);
             let trendHtml = '';
             if (ch24.change > 0) {
-                trendHtml = `<span style="color:#dc2626; font-size:0.8rem; font-weight:bold;">↗ (+$${Math.round(ch24.change)})</span>`;
+                trendHtml = `<span style="color:#dc2626; font-size:0.8rem; font-weight:bold;">↗ (${formatDelta(ch24.change)})</span>`;
             } else if (ch24.change < 0) {
-                trendHtml = `<span style="color:#16a34a; font-size:0.8rem; font-weight:bold;">↘ (-$${Math.abs(Math.round(ch24.change))})</span>`;
+                trendHtml = `<span style="color:#16a34a; font-size:0.8rem; font-weight:bold;">↘ (${formatDelta(ch24.change)})</span>`;
             }
 
             const conf = getPriceConfidence(row);
@@ -1208,7 +1234,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td data-label="Match"><div><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></div></td>
                 <td data-label="Venue">${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±$'+Math.round(conf.spread) : ''}</span></div></div></td>
+                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±' + formatMoney(conf.spread) : ''}</span></div></div></td>
                 <td data-label="Signal">${getSignalBadge(row.signal)}</td>
                 <td data-label="Multiplier"><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small><br><span class="${budgetSt.cls}">${budgetSt.label}</span></div></td>
@@ -1273,15 +1299,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const ch24 = calculateDynamicChange(row, 1);
         const ch7 = calculateDynamicChange(row, 7);
         
-        document.getElementById('chart-24h').textContent = ch24.change === 0 ? '-' : (ch24.change > 0 ? `+$${Math.round(ch24.change)}` : `-$${Math.abs(Math.round(ch24.change))}`);
+        document.getElementById('chart-24h').textContent = ch24.change === 0 ? '-' : formatDelta(ch24.change);
         document.getElementById('chart-24h').style.color = ch24.change > 0 ? '#dc2626' : (ch24.change < 0 ? '#16a34a' : '#64748b');
         
-        document.getElementById('chart-7d').textContent = ch7.change === 0 ? '-' : (ch7.change > 0 ? `+$${Math.round(ch7.change)}` : `-$${Math.abs(Math.round(ch7.change))}`);
+        document.getElementById('chart-7d').textContent = ch7.change === 0 ? '-' : formatDelta(ch7.change);
         document.getElementById('chart-7d').style.color = ch7.change > 0 ? '#dc2626' : (ch7.change < 0 ? '#16a34a' : '#64748b');
 
         if (row.agg_lowest_price && row.target_price) {
             const diff = row.agg_lowest_price - row.target_price;
-            document.getElementById('chart-target-dist').textContent = diff > 0 ? `$${Math.round(diff)} above target` : `$${Math.abs(Math.round(diff))} BELOW target!`;
+            document.getElementById('chart-target-dist').textContent = diff > 0 ? `${formatMoney(diff)} above target` : `${formatMoney(Math.abs(diff))} BELOW target!`;
             document.getElementById('chart-target-dist').style.color = diff > 0 ? '#dc2626' : '#16a34a';
         } else {
             document.getElementById('chart-target-dist').textContent = '-';
