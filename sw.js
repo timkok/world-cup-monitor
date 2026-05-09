@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wc-monitor-v2';
+const CACHE_NAME = 'wc-monitor-v3';
 const urlsToCache = [
   './index.html',
   './style.css',
