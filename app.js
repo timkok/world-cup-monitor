@@ -1533,10 +1533,5 @@ document.addEventListener('DOMContentLoaded', () => {
         populateFifaMatchSelector();
         renderFifaTable();
         checkMassDrop();
-        // Auto-expand FIFA section if there's data
-        if (fifaEntries.length > 0 && fifaContent) {
-            fifaContent.style.display = 'block';
-            if (fifaArrow) fifaArrow.textContent = '▲';
-        }
     };
 });

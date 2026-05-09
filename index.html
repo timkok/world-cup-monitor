@@ -133,6 +133,24 @@
             <div class="section-header">
                 <h2>📊 All Matches - Comprehensive Data</h2>
             </div>
+
+            <!-- Family Cost Settings Panel -->
+            <div style="background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                <span style="font-size: 0.85rem; font-weight: 600; color: #475569;">👨‍👩‍👦 Family Cost Settings:</span>
+                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                    <label style="font-size: 0.78rem; color: #64748b; font-weight: 500;">Tickets:</label>
+                    <input type="number" id="fc-tickets" value="4" min="1" style="width: 50px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem;">
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                    <label style="font-size: 0.78rem; color: #64748b; font-weight: 500;">Parking:</label>
+                    <input type="number" id="fc-parking" value="80" min="0" style="width: 60px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem;">
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                    <label style="font-size: 0.78rem; color: #64748b; font-weight: 500;">Food:</label>
+                    <input type="number" id="fc-food" value="120" min="0" style="width: 60px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem;">
+                </span>
+                <button id="update-family-cost" class="btn-link" style="background-color: #3b82f6; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Update Cost</button>
+            </div>
             
             <div class="table-filters" style="margin-bottom: 10px;">
                 <button class="quick-filter btn-link" data-filter="all" style="background-color: #64748b;">Show All</button>
