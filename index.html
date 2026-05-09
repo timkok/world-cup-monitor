@@ -33,10 +33,14 @@
 </head>
 <body>
     <header class="top-banner">
-        <div class="banner-content">
+        <div class="banner-content" style="position: relative;">
             <h1>2026 World Cup Ticket Monitor</h1>
             <p>Live tracking and strategic insights for purchasing secondary market tickets.</p>
-            <p style="margin-top: 10px; font-size: 0.85rem; color: #93c5fd;">Last Updated: <span id="last-updated-time">Loading...</span></p>
+            <p style="margin-top: 10px; font-size: 0.85rem; color: #93c5fd;">
+                Last Updated: <span id="last-updated-time">Loading...</span>
+                <span id="data-health-badge" class="health-badge health-unknown">Checking status...</span>
+            </p>
+            <button id="dark-mode-toggle" style="position: absolute; top: 0; right: 0; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">🌙 Dark Mode</button>
         </div>
     </header>
 
@@ -154,6 +158,8 @@
                     <input type="number" id="family-budget-input" value="1000" min="100" step="100" style="width: 70px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem;">
                 </span>
                 <button id="update-family-cost" class="btn-link" style="background-color: #3b82f6; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Update Cost</button>
+                <button id="export-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px; margin-left: auto;">Export</button>
+                <button id="import-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Import</button>
             </div>
             
             <div class="table-filters" style="margin-bottom: 10px;">

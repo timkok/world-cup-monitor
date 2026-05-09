@@ -30,6 +30,14 @@ jobs:
       - name: Run TickPick scraper
         run: python tickpick_scraper.py
 
+      - name: Run notifier
+        env:
+          USER_TARGETS: ${{ secrets.USER_TARGETS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python notifier.py
+        continue-on-error: true
+
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"

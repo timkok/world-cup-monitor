@@ -7,7 +7,36 @@
     --strategy-bg: #fff9e6; /* Pale Yellow */
     --highlight-blue: #2563eb;
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --card-bg: #ffffff;
 }
+
+[data-theme="dark"] {
+    --primary-color: #0f172a; /* Slate 900 */
+    --secondary-color: #1e293b; /* Slate 800 */
+    --text-main: #f1f5f9; /* Slate 100 */
+    --text-muted: #94a3b8; /* Slate 400 */
+    --border-color: #334155; /* Slate 700 */
+    --strategy-bg: #1e293b;
+    --card-bg: #1e293b;
+}
+
+body {
+    background-color: var(--card-bg);
+    color: var(--text-main);
+}
+
+/* Health Badge */
+.health-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 8px;
+}
+.health-ok { background-color: #16a34a; color: white; }
+.health-stale { background-color: #dc2626; color: white; }
+.health-unknown { background-color: #64748b; color: white; }
 
 * {
     margin: 0;

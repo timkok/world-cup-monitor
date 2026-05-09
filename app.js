@@ -491,6 +491,36 @@ document.addEventListener('DOMContentLoaded', () => {
     let tpRawHistory = [];
     let vsRawHistory = [];
 
+    function checkDataHealth(snapshot) {
+        const badge = document.getElementById('data-health-badge');
+        if (!badge) return;
+        if (!snapshot || snapshot.length === 0) {
+            badge.textContent = 'No Data';
+            badge.className = 'health-badge health-stale';
+            return;
+        }
+        const firstRow = snapshot[0];
+        const observedAtStr = firstRow.latest_observed_at;
+        if (!observedAtStr) {
+            badge.textContent = 'Unknown';
+            badge.className = 'health-badge health-unknown';
+            return;
+        }
+        const observedAt = new Date(observedAtStr);
+        const now = new Date();
+        const diffMins = (now - observedAt) / 60000;
+
+        if (diffMins < 15) {
+            badge.textContent = '● Live';
+            badge.className = 'health-badge health-ok';
+            badge.title = `Last update: ${observedAt.toLocaleString()}`;
+        } else {
+            badge.textContent = '● Stale';
+            badge.className = 'health-badge health-stale';
+            badge.title = `Last update: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
+        }
+    }
+
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
@@ -503,6 +533,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ])
             .then(([snapshot, tpHistory, tpSnapshot, vsSnapshot, sgHistory, vsHistory]) => {
                 allData = snapshot;
+                checkDataHealth(snapshot);
                 tickpickData = tpSnapshot;
                 vividData = vsSnapshot || [];
                 sgRawHistory = sgHistory || [];
@@ -537,6 +568,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initDashboard() {
         populateFilters();
+
+        // Dark Mode Toggle
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        if (darkModeToggle) {
+            const savedTheme = localStorage.getItem('wcm.theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                darkModeToggle.textContent = '☀️ Light Mode';
+            }
+            
+            darkModeToggle.addEventListener('click', () => {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                if (currentTheme === 'dark') {
+                    document.documentElement.removeAttribute('data-theme');
+                    localStorage.setItem('wcm.theme', 'light');
+                    darkModeToggle.textContent = '🌙 Dark Mode';
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('wcm.theme', 'dark');
+                    darkModeToggle.textContent = '☀️ Light Mode';
+                }
+            });
+        }
+
+        // Export Settings
+        const exportBtn = document.getElementById('export-settings');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                const settings = {
+                    notes: localStorage.getItem('wcm.notes.v1'),
+                    pins: localStorage.getItem('wcm.pinned.v2'),
+                    budget: localStorage.getItem('wcm.budget'),
+                    targets: localStorage.getItem('wcm.userTargets.v1'),
+                    fcTickets: localStorage.getItem('fcTickets'),
+                    fcParking: localStorage.getItem('fcParking'),
+                    fcFood: localStorage.getItem('fcFood')
+                };
+                const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `wcm_settings_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        // Import Settings
+        const importBtn = document.getElementById('import-settings');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                const input = prompt('Paste your exported JSON settings here:');
+                if (!input) return;
+                try {
+                    const settings = JSON.parse(input);
+                    if (settings.notes) localStorage.setItem('wcm.notes.v1', settings.notes);
+                    if (settings.pins) localStorage.setItem('wcm.pinned.v2', settings.pins);
+                    if (settings.budget) localStorage.setItem('wcm.budget', settings.budget);
+                    if (settings.targets) localStorage.setItem('wcm.userTargets.v1', settings.targets);
+                    if (settings.fcTickets) localStorage.setItem('fcTickets', settings.fcTickets);
+                    if (settings.fcParking) localStorage.setItem('fcParking', settings.fcParking);
+                    if (settings.fcFood) localStorage.setItem('fcFood', settings.fcFood);
+                    alert('Settings imported successfully! Reloading page...');
+                    window.location.reload();
+                } catch (e) {
+                    alert('Invalid JSON settings.');
+                }
+            });
+        }
 
         const toggleFamilyBtn = document.getElementById('toggle-family-btn');
         if (toggleFamilyBtn) {
