@@ -581,6 +581,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (b.dataset.filter === 'hide10') b.style.backgroundColor = '#2563eb';
         });
 
+        // Budget input
+        const budgetInput = document.getElementById('family-budget-input');
+        if (budgetInput) {
+            budgetInput.value = familyBudget;
+            budgetInput.addEventListener('change', () => {
+                familyBudget = parseInt(budgetInput.value) || 1000;
+                localStorage.setItem('wcm.budget', familyBudget);
+                applyFilters(); // re-render table with updated budget status
+            });
+        }
+
         // Add sorting listeners
         const headers = document.querySelectorAll('#all-matches-table th[data-sort]');
         headers.forEach(th => {
