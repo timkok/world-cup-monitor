@@ -976,7 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No matches found matching criteria.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center">No matches found matching criteria.</td></tr>';
             return;
         }
 
@@ -1013,6 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></div></td>
                 <td data-label="Family fit" class="family-col"><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
                 <td data-label="Reason" style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}</td>
+                <td data-label="Notes"><input type="text" class="note-input" data-event-id="${row.event_id}" value="${(userNotes[row.event_id] || '').replace(/"/g, '&quot;')}" placeholder="Add note..."></td>
                 <td data-label="Decision" style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
@@ -1027,10 +1028,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 else delete userTargets[id];
                 saveUserTargets(userTargets);
                 processAggregatedData();
+                buildMergedHistory();
                 applySignalsAndDecisions();
                 refreshDashboard();
-                // Re-render chart side-panel target dist if shown match changed
                 updateChart(currentChartIndex, getActivePeriod());
+            });
+            input.addEventListener('click', e => e.stopPropagation());
+        });
+
+        // Bind notes inputs
+        tbody.querySelectorAll('input.note-input').forEach(input => {
+            input.addEventListener('change', e => {
+                const id = e.target.dataset.eventId;
+                const val = e.target.value.trim();
+                if (val) userNotes[id] = val;
+                else delete userNotes[id];
+                saveNotes(userNotes);
             });
             input.addEventListener('click', e => e.stopPropagation());
         });
@@ -1181,4 +1194,222 @@ document.addEventListener('DOMContentLoaded', () => {
         update();
         setInterval(update, 1000);
     }
+
+    // ============================================================
+    // FIFA DROP MONITOR MODULE
+    // ============================================================
+
+    // --- User Notes (per-match, persisted in localStorage) ---
+    const NOTES_KEY = 'wcm.notes.v1';
+    function loadNotes() { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; } }
+    function saveNotes(n) { localStorage.setItem(NOTES_KEY, JSON.stringify(n)); }
+    let userNotes = loadNotes();
+
+    // --- FIFA availability data (manual entries, persisted in localStorage) ---
+    const FIFA_KEY = 'wcm.fifaData.v1';
+    function loadFifaData() { try { return JSON.parse(localStorage.getItem(FIFA_KEY) || '[]'); } catch { return []; } }
+    function saveFifaData(d) { localStorage.setItem(FIFA_KEY, JSON.stringify(d)); }
+    let fifaEntries = loadFifaData();
+
+    // --- Payment checklist persistence ---
+    const CHK_KEY = 'wcm.checklist.v1';
+    function loadChecklist() { try { return JSON.parse(localStorage.getItem(CHK_KEY) || '{}'); } catch { return {}; } }
+    function saveChecklist(c) { localStorage.setItem(CHK_KEY, JSON.stringify(c)); }
+    const checklistState = loadChecklist();
+    ['chk-card','chk-visa','chk-fraud','chk-backup','chk-login'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.checked = !!checklistState[id];
+        el.addEventListener('change', () => {
+            checklistState[id] = el.checked;
+            saveChecklist(checklistState);
+        });
+    });
+
+    // --- Trip Cost Risk ---
+    function getTripRisk(row) {
+        const city = (row.host_city || '').toLowerCase();
+        if (city.includes('jersey') || city.includes('east rutherford')) return { label: 'Low', cls: 'trip-risk-low', detail: 'MetLife — drive' };
+        if (city.includes('philadelphia')) return { label: 'Medium', cls: 'trip-risk-med', detail: 'Philly — 1.5hr drive' };
+        if (city.includes('boston') || city.includes('foxborough')) return { label: 'High', cls: 'trip-risk-high', detail: 'Boston — 3.5hr drive' };
+        if (city.includes('toronto')) return { label: 'High', cls: 'trip-risk-high', detail: 'Toronto — border crossing' };
+        return { label: 'Very High', cls: 'trip-risk-vhigh', detail: 'Flight required' };
+    }
+
+    // --- FIFA Section Toggle ---
+    const fifaHeader = document.getElementById('fifa-toggle-header');
+    const fifaContent = document.getElementById('fifa-content');
+    const fifaArrow = document.getElementById('fifa-toggle-arrow');
+    if (fifaHeader && fifaContent) {
+        fifaHeader.addEventListener('click', () => {
+            const shown = fifaContent.style.display !== 'none';
+            fifaContent.style.display = shown ? 'none' : 'block';
+            fifaArrow.textContent = shown ? '▼' : '▲';
+        });
+    }
+
+    // --- Populate FIFA match selector ---
+    function populateFifaMatchSelector() {
+        const sel = document.getElementById('fifa-match-select');
+        if (!sel || !allData.length) return;
+        sel.innerHTML = '';
+        allData.forEach(row => {
+            const opt = document.createElement('option');
+            opt.value = row.event_id;
+            opt.textContent = `${row.match} — ${(row.host_city || '').split(',')[0]}`;
+            sel.appendChild(opt);
+        });
+    }
+
+    // --- Log FIFA entry ---
+    const fifaLogBtn = document.getElementById('fifa-log-btn');
+    if (fifaLogBtn) {
+        fifaLogBtn.addEventListener('click', () => {
+            const matchSel = document.getElementById('fifa-match-select');
+            const statusSel = document.getElementById('fifa-status-select');
+            const qualitySel = document.getElementById('fifa-quality-select');
+            const qtyEl = document.getElementById('fifa-qty');
+            const cats = [];
+            if (document.getElementById('fifa-cat1').checked) cats.push('CAT1');
+            if (document.getElementById('fifa-cat2').checked) cats.push('CAT2');
+            if (document.getElementById('fifa-cat3').checked) cats.push('CAT3');
+            if (document.getElementById('fifa-cat4').checked) cats.push('CAT4');
+
+            const entry = {
+                event_id: matchSel.value,
+                match_name: matchSel.options[matchSel.selectedIndex].textContent,
+                status: statusSel.value,
+                categories: cats,
+                quality: qualitySel.value,
+                qty: parseInt(qtyEl.value) || 0,
+                timestamp: new Date().toISOString(),
+            };
+            fifaEntries.push(entry);
+            saveFifaData(fifaEntries);
+            renderFifaTable();
+            checkMassDrop();
+        });
+    }
+
+    // --- Compute availability pattern from history ---
+    function computePattern(entries) {
+        if (entries.length <= 1) return 'Unknown';
+        const available = entries.filter(e => e.status === 'available' || e.status === 'limited');
+        const soldOut = entries.filter(e => e.status === 'sold_out');
+        if (available.length === 0) return 'Long Sold Out';
+        if (soldOut.length === 0 && available.length >= 3) return 'Stable';
+        if (available.length === 1) return 'One-off';
+        // Check if there was a recent burst
+        const recent = available.filter(e => Date.now() - new Date(e.timestamp).getTime() < 30 * 60000);
+        if (recent.length >= 3) return 'Mass Drop';
+        return 'Volatile';
+    }
+
+    // --- Compute action signal ---
+    function computeAction(latestEntry, pattern) {
+        if (!latestEntry) return 'Ignore';
+        if (latestEntry.status === 'available') {
+            if (pattern === 'Mass Drop' || pattern === 'Stable') return 'Buy';
+            if (pattern === 'One-off') return 'Queue Now';
+            return 'Login Now';
+        }
+        if (latestEntry.status === 'limited') return 'Login Now';
+        if (pattern === 'Volatile') return 'Watch';
+        if (pattern === 'Long Sold Out') return 'Backup Only';
+        return 'Watch';
+    }
+
+    function getActionBadge(action) {
+        const map = {
+            'Buy': 'badge-buy', 'Queue Now': 'badge-buy',
+            'Login Now': 'badge-monitor', 'Watch': 'badge-monitor',
+            'Backup Only': 'badge-wait', 'Ignore': 'badge-wait',
+        };
+        return `<span class="badge ${map[action] || 'badge-wait'}">${action}</span>`;
+    }
+
+    function getQualityLabel(q) {
+        const map = { 'real_drop': 'Real Drop', 'cart_return': 'Cart Return', 'ghost_risk': 'Ghost Risk', 'stable_supply': 'Stable Supply' };
+        return map[q] || q;
+    }
+    function getStatusBadge(s) {
+        if (s === 'available') return '<span class="fifa-available">Available</span>';
+        if (s === 'sold_out') return '<span class="fifa-sold-out">Sold Out</span>';
+        return '<span class="fifa-limited">Limited</span>';
+    }
+
+    // --- Render FIFA table ---
+    function renderFifaTable() {
+        const tbody = document.getElementById('fifa-table-body');
+        if (!tbody) return;
+
+        // Group by event_id
+        const byEvent = new Map();
+        for (const e of fifaEntries) {
+            const key = e.event_id;
+            if (!byEvent.has(key)) byEvent.set(key, []);
+            byEvent.get(key).push(e);
+        }
+
+        if (byEvent.size === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:#94a3b8;">No FIFA availability data yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        for (const [eid, entries] of byEvent) {
+            entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const latest = entries[0];
+            const pattern = computePattern(entries);
+            const action = computeAction(latest, pattern);
+
+            // Find matching SG row for trip risk
+            const sgRow = allData.find(r => String(r.event_id) === String(eid));
+            const risk = sgRow ? getTripRisk(sgRow) : { label: '?', cls: '', detail: '' };
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${latest.match_name}</strong></td>
+                <td>${getStatusBadge(latest.status)}</td>
+                <td>${(latest.categories || []).join(', ') || '-'}</td>
+                <td>${getQualityLabel(latest.quality)}</td>
+                <td>${pattern}</td>
+                <td><small>${new Date(latest.timestamp).toLocaleString()}</small></td>
+                <td>${getActionBadge(action)}</td>
+                <td><span class="${risk.cls}">${risk.label}</span><br><small style="color:#94a3b8;">${risk.detail}</small></td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    // --- Mass Drop Detection ---
+    function checkMassDrop() {
+        const banner = document.getElementById('mass-drop-banner');
+        const details = document.getElementById('mass-drop-details');
+        if (!banner || !details) return;
+
+        const now = Date.now();
+        const window30m = 30 * 60000;
+        const recentAvailable = fifaEntries.filter(e =>
+            (e.status === 'available' || e.status === 'limited') &&
+            (now - new Date(e.timestamp).getTime()) < window30m
+        );
+        const uniqueMatches = new Set(recentAvailable.map(e => e.event_id));
+
+        if (uniqueMatches.size >= 3) {
+            banner.style.display = 'block';
+            details.textContent = ` ${uniqueMatches.size} matches went available in the last 30 min! `;
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    // Initialize FIFA module after data loads
+    const origRefresh = refreshDashboard;
+    refreshDashboard = function() {
+        origRefresh();
+        populateFifaMatchSelector();
+        renderFifaTable();
+        checkMassDrop();
+    };
 });

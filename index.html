@@ -163,16 +163,95 @@
                             <th data-sort="cost" class="family-col">Family Cost</th>
                             <th data-sort="fit" class="family-col">Family Fit</th>
                             <th>Reason</th>
+                            <th>Notes</th>
                             <th>Decision</th>
                         </tr>
                     </thead>
                     <tbody id="all-matches-body">
-                        <tr><td colspan="9" class="text-center">Loading data...</td></tr>
+                        <tr><td colspan="10" class="text-center">Loading data...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
+
+        <!-- Mass Drop Banner (hidden by default) -->
+        <section id="mass-drop-banner" class="mass-drop-banner" style="display:none;" aria-live="assertive">
+            <strong>🚨 Possible FIFA ticket drop detected!</strong>
+            <span id="mass-drop-details"></span>
+            <span style="font-size:0.85rem;">Log in to FIFA.com/tickets NOW</span>
+        </section>
+
+        <!-- Official FIFA Drop Monitor (collapsible) -->
+        <section class="fifa-section">
+            <div class="section-header" style="cursor:pointer;" id="fifa-toggle-header">
+                <h2>🏟️ Official FIFA Drop Monitor <span id="fifa-toggle-arrow" style="font-size:0.8rem;">▼</span></h2>
+                <p>Manual tracking of FIFA official ticket availability. Click to expand.</p>
+            </div>
+            <div id="fifa-content" style="display:none;">
+                <!-- Payment Prep Checklist -->
+                <details class="prep-checklist" open>
+                    <summary><strong>💳 Pre-Drop Checklist</strong></summary>
+                    <ul class="checklist">
+                        <li><label><input type="checkbox" id="chk-card"> Card in your own name</label></li>
+                        <li><label><input type="checkbox" id="chk-visa"> Prefer Visa if available</label></li>
+                        <li><label><input type="checkbox" id="chk-fraud"> Bank fraud alerts cleared</label></li>
+                        <li><label><input type="checkbox" id="chk-backup"> Backup card ready</label></li>
+                        <li><label><input type="checkbox" id="chk-login"> FIFA account logged in</label></li>
+                    </ul>
+                </details>
+
+                <!-- FIFA Availability Table -->
+                <div class="table-responsive" style="margin-top:12px;">
+                    <table class="data-table" id="fifa-table">
+                        <thead>
+                            <tr>
+                                <th>Match</th>
+                                <th>Status</th>
+                                <th>Categories</th>
+                                <th>Drop Quality</th>
+                                <th>Pattern</th>
+                                <th>Last Seen</th>
+                                <th>Action</th>
+                                <th>Trip Risk</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fifa-table-body">
+                            <tr><td colspan="8" class="text-center" style="color:#94a3b8;">No FIFA availability data yet. Use the form below to log sightings.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Manual Entry Form -->
+                <div class="fifa-entry-form" style="margin-top:12px; padding:12px; background:#f0f9ff; border-radius:6px; border:1px solid #bae6fd;">
+                    <strong>📝 Log FIFA Availability</strong>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:end;">
+                        <select id="fifa-match-select" class="filter-select" style="flex:2; min-width:180px;"><option>Loading...</option></select>
+                        <select id="fifa-status-select" class="filter-select" style="flex:1; min-width:100px;">
+                            <option value="available">Available</option>
+                            <option value="sold_out">Sold Out</option>
+                            <option value="limited">Limited</option>
+                        </select>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <label style="font-size:0.78rem;color:#64748b;">CAT:</label>
+                            <label><input type="checkbox" id="fifa-cat1" value="1"> 1</label>
+                            <label><input type="checkbox" id="fifa-cat2" value="2"> 2</label>
+                            <label><input type="checkbox" id="fifa-cat3" value="3" checked> 3</label>
+                            <label><input type="checkbox" id="fifa-cat4" value="4" checked> 4</label>
+                        </div>
+                        <select id="fifa-quality-select" class="filter-select" style="flex:1; min-width:120px;">
+                            <option value="real_drop">Real Drop</option>
+                            <option value="cart_return">Cart Return</option>
+                            <option value="ghost_risk">Ghost Risk</option>
+                            <option value="stable_supply">Stable Supply</option>
+                        </select>
+                        <input type="number" id="fifa-qty" placeholder="Qty" min="1" value="2" style="width:55px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
+                        <button id="fifa-log-btn" class="btn-link" style="padding:6px 14px;">Log</button>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
+
 
     <!-- Custom JS -->
     <script src="app.js"></script>
