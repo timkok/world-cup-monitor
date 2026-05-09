@@ -1,8 +1,8 @@
-name: Hourly Vivid Seats scrape
+name: Vivid Seats scrape (15-min)
 
 on:
   schedule:
-    - cron: '30 * * * *'  # offset from SeatGeek (:00) and TickPick (:15)
+    - cron: '10,25,40,55 * * * *'  # every 15 min, Vivid slot (offset from SG :00 and TP :05)
   workflow_dispatch:
 
 permissions:

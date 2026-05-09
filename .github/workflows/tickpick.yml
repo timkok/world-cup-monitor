@@ -1,8 +1,8 @@
-name: Hourly TickPick scrape
+name: TickPick scrape (15-min)
 
 on:
   schedule:
-    - cron: '15 * * * *'  # offset from the SeatGeek mock job to avoid push collisions
+    - cron: '5,20,35,50 * * * *'  # every 15 min, TP slot (offset from SG :00 and Vivid :10)
   workflow_dispatch:
 
 permissions:

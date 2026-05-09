@@ -407,3 +407,60 @@ h1, h2, h3, h4 { color: var(--primary-color); }
 #all-matches-table.hide-family-cols .family-col {
     display: none;
 }
+
+/* ----- Mobile card layout (≤ 640px) -----
+   Render the All-Matches table as one card per row instead of forcing
+   horizontal scroll on tiny screens. Each <td> labels itself via the
+   data-label attribute injected by app.js. */
+@media (max-width: 640px) {
+    .data-table.full-table thead {
+        display: none;
+    }
+    .data-table.full-table,
+    .data-table.full-table tbody,
+    .data-table.full-table tr,
+    .data-table.full-table td {
+        display: block;
+        width: 100%;
+    }
+    .data-table.full-table tr {
+        background: #fff;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        margin-bottom: 12px;
+        padding: 10px 14px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
+    .data-table.full-table tr:hover { background: #fff; }
+    .data-table.full-table td {
+        border: none;
+        padding: 6px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 0.88rem;
+    }
+    .data-table.full-table td::before {
+        content: attr(data-label);
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+        min-width: 80px;
+        padding-top: 2px;
+    }
+    .data-table.full-table td:first-child {
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 8px;
+        margin-bottom: 4px;
+    }
+    .data-table.full-table td:first-child::before { display: none; }
+    /* The table no longer overflows so kill the horizontal scroll wrapper. */
+    .main-table-section .table-responsive {
+        overflow-x: visible;
+        border: none;
+    }
+}

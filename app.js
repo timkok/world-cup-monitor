@@ -101,11 +101,43 @@ document.addEventListener('DOMContentLoaded', () => {
         return str.toLowerCase().replace(/[^a-z0-9]/g, '');
     }
 
+    // Loaded asynchronously from team_aliases.json. List of [variantNormalized,
+    // canonicalNormalized] pairs, sorted by variant length DESC so longer
+    // matches replace before shorter prefixes (e.g. 'unitedstates' before 'us').
+    let teamAliasPairs = [];
+    function applyAliases(s) {
+        if (!s || !teamAliasPairs.length) return s;
+        let out = s;
+        for (const [variant, canonical] of teamAliasPairs) {
+            if (variant === canonical) continue;
+            if (out.indexOf(variant) !== -1) out = out.split(variant).join(canonical);
+        }
+        return out;
+    }
+    function fetchAliases() {
+        return fetch('team_aliases.json?t=' + Date.now())
+            .then(r => r.ok ? r.json() : {})
+            .then(map => {
+                const pairs = [];
+                for (const [canonical, variants] of Object.entries(map)) {
+                    if (canonical.startsWith('_')) continue;
+                    const cNorm = normalizeString(canonical);
+                    const all = new Set([cNorm, ...variants.map(normalizeString).filter(Boolean)]);
+                    for (const v of all) pairs.push([v, cNorm]);
+                }
+                pairs.sort((a, b) => b[0].length - a[0].length);
+                teamAliasPairs = pairs;
+            }).catch(() => { /* aliases optional */ });
+    }
+
     function extractTeams(str) {
         if (!str) return [];
         const parts = str.toLowerCase().split(/vs\.?/);
         if (parts.length === 2) {
-            return [normalizeString(parts[0]), normalizeString(parts[1])];
+            return [
+                applyAliases(normalizeString(parts[0])),
+                applyAliases(normalizeString(parts[1])),
+            ];
         }
         return [];
     }
@@ -133,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const rMatchNum = extractMatchNumber(rName);
             if (sgMatchNum && rMatchNum && sgMatchNum === rMatchNum) return true;
             if (sgTeams.length === 2) {
-                const norm = normalizeString(rName);
+                const norm = applyAliases(normalizeString(rName));
                 if (norm.includes(sgTeams[0]) && norm.includes(sgTeams[1])) return true;
             }
             const sgV = normalizeString(sgRow.venue);
@@ -318,6 +350,64 @@ document.addEventListener('DOMContentLoaded', () => {
         return reason;
     }
 
+    // Build per-SG-event merged time series from price_history.csv (SG),
+    // tickpick_history.csv (mapped via row.tp_event_id) and vivid_history.csv
+    // (mapped via row.vs_event_id). Source-tagged so we can debug later.
+    function buildMergedHistory() {
+        historyByEvent = new Map();
+
+        // Reverse lookups for the cross-platform mappings discovered in
+        // processAggregatedData.
+        const tpToSg = new Map();
+        const vsToSg = new Map();
+        for (const row of allData) {
+            if (row.tp_event_id != null) tpToSg.set(String(row.tp_event_id), String(row.event_id));
+            if (row.vs_event_id != null) vsToSg.set(String(row.vs_event_id), String(row.event_id));
+        }
+
+        function add(sgId, t, price, src) {
+            if (sgId == null || price == null || isNaN(price) || isNaN(t.getTime())) return;
+            const key = String(sgId);
+            if (!historyByEvent.has(key)) historyByEvent.set(key, []);
+            historyByEvent.get(key).push({ t, price: Number(price), src });
+        }
+
+        for (const r of sgRawHistory) {
+            if (r.event_id == null || r.low_usd == null) continue;
+            add(r.event_id, new Date(r.observed_at), r.low_usd, 'SG');
+        }
+        for (const r of tpRawHistory) {
+            if (r.tickpick_event_id == null || r.low_price_usd == null) continue;
+            const sgId = tpToSg.get(String(r.tickpick_event_id));
+            if (!sgId) continue;
+            add(sgId, new Date(r.observed_at), r.low_price_usd, 'TP');
+        }
+        for (const r of vsRawHistory) {
+            if (r.vivid_event_id == null || r.low_price_usd == null) continue;
+            const sgId = vsToSg.get(String(r.vivid_event_id));
+            if (!sgId) continue;
+            add(sgId, new Date(r.observed_at), r.low_price_usd, 'VS');
+        }
+        for (const arr of historyByEvent.values()) arr.sort((a, b) => a.t - b.t);
+    }
+
+    // Phase 2 of the data pipeline: now that historyByEvent is populated with
+    // merged multi-source observations, compute trend signals + final decisions
+    // + reason text per row.
+    function applySignalsAndDecisions() {
+        allData.forEach(row => {
+            const sig = computeSignal(row.event_id, row.agg_lowest_price);
+            row.signal = sig.signal;
+            row.signal_mean = sig.mean;
+            row.signal_min = sig.min;
+            row.decision = getDecision(row.agg_lowest_price, row.target_price, row.signal);
+            row.reason = generateReason(row, row.multiplier, row.decision, row.family_fit);
+            const { change, pct } = calculateDynamicChange(row, 7);
+            row.change7d = change;
+            row.pct7d = pct;
+        });
+    }
+
     function processAggregatedData() {
         allData.forEach(row => {
             const tpMatch = matchTickPick(row, tickpickData);
@@ -326,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tpPrice = tpMatch && tpMatch.low_price_usd != null ? Number(tpMatch.low_price_usd) : null;
             const vsPrice = vsMatch && vsMatch.low_price_usd != null ? Number(vsMatch.low_price_usd) : null;
             row.tp_event_id = tpMatch ? tpMatch.tickpick_event_id : null;
+            row.vs_event_id = vsMatch ? vsMatch.vivid_event_id : null;
 
             // Pick the cheapest non-null price across the three platforms.
             const candidates = [
@@ -358,24 +449,24 @@ document.addEventListener('DOMContentLoaded', () => {
             row.target_price = (userTarget != null && !isNaN(userTarget) && userTarget > 0) ? Number(userTarget) : computedTarget;
             row.target_is_custom = userTarget != null && !isNaN(userTarget) && userTarget > 0;
 
-            const sig = computeSignal(row.tp_event_id, lowestPrice);
-            row.signal = sig.signal;
-            row.signal_mean = sig.mean;
-            row.signal_min = sig.min;
-
-            row.decision = getDecision(lowestPrice, row.target_price, row.signal);
+            // Signal + decision + family are deferred to applySignalsAndDecisions()
+            // so they can use the merged multi-source history (built after this pass).
+            row.signal = 'No data';
+            row.signal_mean = null;
+            row.signal_min = null;
+            row.decision = 'Unknown';
             row.family_cost = lowestPrice ? (lowestPrice * fcTickets) + fcParking + fcFood : 0;
             row.family_fit = getFamilyFit(row);
-            row.reason = generateReason(row, row.multiplier, row.decision, row.family_fit);
-            
-            const { change, pct } = calculateDynamicChange(row, 7);
-            row.change7d = change;
-            row.pct7d = pct;
+            row.reason = '';
+            // change7d / pct7d computed in applySignalsAndDecisions().
         });
     }
 
     // --- Bootstrapping ---
     let vividData = [];
+    let sgRawHistory = [];
+    let tpRawHistory = [];
+    let vsRawHistory = [];
 
     function loadData() {
         Promise.all([
@@ -383,26 +474,26 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchCsv('tickpick_history.csv').catch(() => []),
             fetchCsv('tickpick_data.csv').catch(() => []),
             fetchCsv('vivid_data.csv').catch(() => []),
+            fetchCsv('price_history.csv').catch(() => []),
+            fetchCsv('vivid_history.csv').catch(() => []),
+            fetchAliases(),
         ])
-            .then(([snapshot, history, tpSnapshot, vsSnapshot]) => {
+            .then(([snapshot, tpHistory, tpSnapshot, vsSnapshot, sgHistory, vsHistory]) => {
                 allData = snapshot;
                 tickpickData = tpSnapshot;
                 vividData = vsSnapshot || [];
+                sgRawHistory = sgHistory || [];
+                tpRawHistory = tpHistory || [];
+                vsRawHistory = vsHistory || [];
 
-                historyByEvent = new Map();
-                for (const row of history) {
-                    if (row.tickpick_event_id == null || row.low_price_usd == null) continue;
-                    const t = new Date(row.observed_at);
-                    if (isNaN(t.getTime())) continue;
-                    const key = String(row.tickpick_event_id);
-                    if (!historyByEvent.has(key)) historyByEvent.set(key, []);
-                    historyByEvent.get(key).push({ t, price: Number(row.low_price_usd) });
-                }
-                for (const arr of historyByEvent.values()) {
-                    arr.sort((a, b) => a.t - b.t);
-                }
-
+                // historyByEvent will be populated *after* processAggregatedData has
+                // resolved each SG row's tp_event_id / vs_event_id, so the key is
+                // always the canonical SG event_id with a merged time series.
                 processAggregatedData();
+                buildMergedHistory();
+                // Re-run the part of processAggregatedData that depends on history
+                // (signal + decision) now that historyByEvent is populated.
+                applySignalsAndDecisions();
 
                 if (!initialized) {
                     initDashboard();
@@ -455,8 +546,9 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('fcTickets', fcTickets);
             localStorage.setItem('fcParking', fcParking);
             localStorage.setItem('fcFood', fcFood);
-            
+
             processAggregatedData();
+            applySignalsAndDecisions();
             refreshDashboard();
         });
 
@@ -843,15 +935,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tr.innerHTML = `
-                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></td>
-                <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td class="price-cell">${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)}</div></td>
-                <td>${getSignalBadge(row.signal)}</td>
-                <td><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
-                <td><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></td>
-                <td><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
-                <td style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}</td>
-                <td style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
+                <td data-label="Match"><div><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></div></td>
+                <td data-label="Venue">${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
+                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span><div style="margin-top:4px;">${renderSources(row)}</div></div></td>
+                <td data-label="Signal">${getSignalBadge(row.signal)}</td>
+                <td data-label="Multiplier"><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
+                <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></div></td>
+                <td data-label="Family fit" class="family-col"><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
+                <td data-label="Reason" style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}</td>
+                <td data-label="Decision" style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -865,6 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else delete userTargets[id];
                 saveUserTargets(userTargets);
                 processAggregatedData();
+                applySignalsAndDecisions();
                 refreshDashboard();
                 // Re-render chart side-panel target dist if shown match changed
                 updateChart(currentChartIndex, getActivePeriod());
@@ -930,8 +1023,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataPoints = filtered.map(p => p.price);
         const fullTimestamps = filtered.map(p => p.t.toLocaleString());
 
-        const ctx = document.getElementById('trendChart').getContext('2d');
+        const canvas = document.getElementById('trendChart');
+        const ctx = canvas.getContext('2d');
         if (trendChartInstance) trendChartInstance.destroy();
+
+        // Vertical gradient fill for the area under the line (deep navy → near-transparent).
+        const grad = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight || 250);
+        grad.addColorStop(0, 'rgba(37, 99, 235, 0.28)');
+        grad.addColorStop(1, 'rgba(37, 99, 235, 0.02)');
+
+        // Source color per point so multi-source observations are visually distinguishable.
+        const srcToColor = src => src === 'TP' ? '#0d4c8a' : src === 'VS' ? '#9d174d' : '#b45309';
+        const pointColors = filtered.map(p => srcToColor(p.src));
 
         trendChartInstance = new Chart(ctx, {
             type: 'line',
@@ -940,43 +1043,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 datasets: [{
                     label: 'Get-in Price ($)',
                     data: dataPoints,
-                    borderColor: '#002147',
-                    backgroundColor: 'rgba(0, 33, 71, 0.1)',
-                    borderWidth: 2,
-                    pointBackgroundColor: '#2563eb',
+                    borderColor: '#0b3d7a',
+                    backgroundColor: grad,
+                    borderWidth: 2.5,
+                    pointBackgroundColor: pointColors,
                     pointBorderColor: '#fff',
-                    pointRadius: 3,
+                    pointBorderWidth: 1.5,
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6,
                     fill: true,
-                    tension: 0.1,
+                    tension: 0.4,           // smoother curve
+                    cubicInterpolationMode: 'monotone',
                     spanGaps: true,
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                animation: { duration: 350, easing: 'easeOutQuart' },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
-                        backgroundColor: '#002147',
+                        backgroundColor: '#0f172a',
                         titleColor: '#fff',
+                        titleFont: { size: 12, family: 'Inter', weight: '600' },
                         bodyFont: { size: 13, family: 'Inter' },
                         padding: 10,
-                        cornerRadius: 4,
+                        cornerRadius: 6,
                         displayColors: false,
                         callbacks: {
                             title: ctx => fullTimestamps[ctx[0].dataIndex] || '',
-                            label: ctx => '$' + ctx.parsed.y.toLocaleString(),
+                            label: ctx => {
+                                const src = filtered[ctx.dataIndex] && filtered[ctx.dataIndex].src;
+                                const label = src ? ` (${src})` : '';
+                                return '$' + ctx.parsed.y.toLocaleString() + label;
+                            },
                         }
                     }
                 },
                 scales: {
                     x: {
-                        grid: { color: '#e2e8f0' },
-                        ticks: { color: '#666', font: { family: 'Inter' }, maxTicksLimit: 10, autoSkip: true }
+                        grid: { display: false },
+                        ticks: { color: '#64748b', font: { family: 'Inter', size: 11 }, maxTicksLimit: 8, autoSkip: true }
                     },
                     y: {
-                        grid: { color: '#e2e8f0' },
-                        ticks: { color: '#666', font: { family: 'Inter' }, callback: v => '$' + v }
+                        grid: { color: 'rgba(226,232,240,0.6)', drawBorder: false },
+                        ticks: { color: '#64748b', font: { family: 'Inter', size: 11 }, callback: v => '$' + Number(v).toLocaleString() }
                     }
                 }
             }
