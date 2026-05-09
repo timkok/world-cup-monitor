@@ -42,36 +42,44 @@
         <!-- Summary Metrics -->
         <section class="metrics-grid">
             <div class="metric-card">
-                <h3 id="metric-total-matches">-</h3>
-                <p>Total Matches Tracked</p>
+                <h3 id="metric-best-buy">-</h3>
+                <p>Best Buy Now</p>
             </div>
             <div class="metric-card">
-                <h3 id="metric-cheapest-price">-</h3>
-                <p>Cheapest Ticket Available</p>
+                <h3 id="metric-cheapest-local">-</h3>
+                <p>Cheapest Local</p>
             </div>
             <div class="metric-card">
-                <h3 id="metric-avg-price">-</h3>
-                <p>Avg Ticket Price (Tracked)</p>
+                <h3 id="metric-best-metlife">-</h3>
+                <p>Best MetLife Watch</p>
             </div>
             <div class="metric-card">
-                <h3 id="metric-nj-matches">-</h3>
-                <p>Local Matches (NJ/PA/MA)</p>
+                <h3 id="metric-avoid-count">-</h3>
+                <p>Avoid (Overpriced)</p>
             </div>
         </section>
 
         <!-- Strategy Callout -->
         <section class="strategy-callout">
-            <h2>💡 Ticket Buying Strategy (Based on Club World Cup Experience)</h2>
-            <div class="strategy-columns">
+            <h2>💡 Secondary Market Strategy & Family Cost</h2>
+            <div style="margin-bottom: 15px; color: #b45309; font-weight: 600; font-size: 0.95rem;">
+                CHECK FIFA FIRST: Secondary market only after checking FIFA official resale first! (Especially for Toronto matches due to Ontario laws).
+            </div>
+            <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap; background: rgba(255,255,255,0.7); padding: 12px; border-radius: 6px;">
+                <strong style="color: #0f172a; margin-right: 10px;">👪 Trip Estimator:</strong>
                 <div>
-                    <strong>1. Official Channels First:</strong> Always check FIFA.com/tickets. It's the only official source for face-value tickets.
+                    <label style="font-size: 0.85rem; color:#64748b;">Tickets:</label>
+                    <input type="number" id="fc-tickets" value="4" style="width: 50px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
                 </div>
                 <div>
-                    <strong>2. Marquee Matches:</strong> For Finals and Semis, buy as early as possible. Prices rarely drop on secondary markets due to high demand.
+                    <label style="font-size: 0.85rem; color:#64748b;">Parking ($):</label>
+                    <input type="number" id="fc-parking" value="80" style="width: 60px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
                 </div>
                 <div>
-                    <strong>3. Group Stages:</strong> Monitor availability. Last-minute official drops sometimes happen when sponsors return tickets.
+                    <label style="font-size: 0.85rem; color:#64748b;">Food ($):</label>
+                    <input type="number" id="fc-food" value="120" style="width: 60px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
                 </div>
+                <button id="update-family-cost" class="btn-link" style="padding: 4px 12px; font-size: 0.8rem; border-radius: 4px;">Update</button>
             </div>
         </section>
 
@@ -79,20 +87,20 @@
             <!-- Left: Top Deals -->
             <section class="mini-table-section flex-1">
                 <div class="section-header">
-                    <h2>🎯 Top Recommended Buys</h2>
-                    <p>Algorithm-curated best values based on price drops, prestige, and premium rate.</p>
+                    <h2>📋 My Watchlist</h2>
+                    <p>MetLife, Philly, Boston, and Strong Teams.</p>
                 </div>
                 <div class="table-responsive">
                     <table class="data-table" id="priority-deals-table">
                         <thead>
                             <tr>
                                 <th>Match & City</th>
-                                <th>Get-in Price</th>
-                                <th>AI Opinion</th>
-                                <th>Action</th>
+                                <th>Price vs Target</th>
+                                <th>Reason</th>
+                                <th>Decision</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="decision-board-body">
                             <tr><td colspan="4">Loading...</td></tr>
                         </tbody>
                     </table>
@@ -102,7 +110,7 @@
             <!-- Right: Chart -->
             <section class="chart-section flex-1">
                 <div class="section-header">
-                    <h2>📈 Historical Price Trend</h2>
+                    <h2>📈 Hourly Price Trend</h2>
                     <div>
                         <select id="match-selector" class="filter-select" style="margin-right: 5px;">
                             <option>Loading matches...</option>
@@ -113,6 +121,11 @@
                             <button class="chart-toggle" data-period="1w">1W</button>
                         </div>
                     </div>
+                </div>
+                <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.85rem; background: #f8fafc; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                    <div style="flex: 1;"><strong>24h:</strong> <span id="chart-24h">-</span></div>
+                    <div style="flex: 1;"><strong>7d:</strong> <span id="chart-7d">-</span></div>
+                    <div style="flex: 1;"><strong>Vs Target:</strong> <span id="chart-target-dist">-</span></div>
                 </div>
                 <div style="position: relative; height: 250px; width: 100%;">
                     <canvas id="trendChart"></canvas>
@@ -126,6 +139,14 @@
                 <h2>📊 All Matches - Comprehensive Data</h2>
             </div>
             
+            <div class="table-filters" style="margin-bottom: 10px;">
+                <button class="quick-filter btn-link" data-filter="all" style="background-color: #64748b;">Show All</button>
+                <button class="quick-filter btn-link" data-filter="fv3" style="background-color: #64748b;">Only < 3x Face</button>
+                <button class="quick-filter btn-link" data-filter="east5" style="background-color: #64748b;">East Coast < 5x</button>
+                <button class="quick-filter btn-link" data-filter="metlife8" style="background-color: #64748b;">MetLife < 8x</button>
+                <button class="quick-filter btn-link" data-filter="hide10" style="background-color: #64748b;">Hide > 10x</button>
+            </div>
+
             <div class="table-filters">
                 <input type="text" id="search-input" class="filter-input" placeholder="Search matches or cities...">
                 <select id="stage-filter" class="filter-select">
@@ -133,13 +154,9 @@
                 </select>
                 <select id="region-filter" class="filter-select">
                     <option value="All">All Regions</option>
-                    <option value="Local">Local (NJ/PA/MA)</option>
-                </select>
-                <select id="interval-filter" class="filter-select">
-                    <option value="1">1 Day Change</option>
-                    <option value="3">3 Day Change</option>
-                    <option value="7">7 Day Change</option>
-                    <option value="all">All Time Change</option>
+                    <option value="MetLife">MetLife (Tier 1)</option>
+                    <option value="PhillyBoston">Philly/Boston (Tier 2/3)</option>
+                    <option value="Toronto">Toronto (Tier 4)</option>
                 </select>
             </div>
 
@@ -147,19 +164,18 @@
                 <table class="data-table full-table" id="all-matches-table">
                     <thead>
                         <tr>
-                            <th>Match</th>
-                            <th>Date & Time</th>
-                            <th>Venue & City</th>
-                            <th>Source</th>
-                            <th>Get-in Price</th>
-                            <th>Change ($ / %)</th>
-                            <th>Trend Note</th>
-                            <th>Recommendation</th>
-                            <th>Link</th>
+                            <th>Match & Date</th>
+                            <th>Venue</th>
+                            <th>Price & Target</th>
+                            <th>Face Multiplier</th>
+                            <th>Family Cost</th>
+                            <th>Family Fit</th>
+                            <th>Reason</th>
+                            <th>Decision</th>
                         </tr>
                     </thead>
                     <tbody id="all-matches-body">
-                        <tr><td colspan="9" class="text-center">Loading data...</td></tr>
+                        <tr><td colspan="8" class="text-center">Loading data...</td></tr>
                     </tbody>
                 </table>
             </div>

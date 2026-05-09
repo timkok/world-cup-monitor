@@ -6,15 +6,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChartIndex = 0;
     let initialized = false;
 
+    // --- Configuration ---
     const localCities = ['New York / New Jersey', 'Philadelphia, PA', 'Boston, MA'];
+    const metlifeCities = ['New York / New Jersey', 'East Rutherford'];
+    const phillyBostonCities = ['Philadelphia, PA', 'Boston, MA'];
+    const strongTeams = ['USA', 'Argentina', 'Brazil', 'France', 'England', 'Spain', 'Germany', 'Portugal'];
+    
+    // Family Cost Settings
+    let fcTickets = 4;
+    let fcParking = 80;
+    let fcFood = 120;
+
     const RELOAD_INTERVAL_MS = 60 * 60 * 1000;
 
+    // --- DOM Elements ---
     const searchInput = document.getElementById('search-input');
     const stageFilter = document.getElementById('stage-filter');
     const regionFilter = document.getElementById('region-filter');
-    const intervalFilter = document.getElementById('interval-filter');
     const chartToggles = document.querySelectorAll('.chart-toggle');
+    const quickFilters = document.querySelectorAll('.quick-filter');
+    const btnUpdateCost = document.getElementById('update-family-cost');
 
+    let currentQuickFilter = 'all';
+
+    // --- Data Fetching ---
     function fetchCsv(path) {
         return fetch(`${path}?t=${Date.now()}`).then(response => {
             if (!response.ok) throw new Error(`Failed to load ${path}`);
@@ -45,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    // --- Core Logic Engine ---
     function getFaceValue(stage) {
         const s = (stage || '').toLowerCase();
         if (s.includes('final') && !s.includes('semi') && !s.includes('quarter')) return 600;
@@ -52,6 +68,90 @@ document.addEventListener('DOMContentLoaded', () => {
         if (s.includes('quarter')) return 250;
         if (s.includes('16') || s.includes('32')) return 150;
         return 70; // Group stage
+    }
+
+    function isStrongMatch(matchName) {
+        if (!matchName) return false;
+        return strongTeams.some(team => matchName.includes(team));
+    }
+
+    function getTargetPrice(row, currentPrice, fv) {
+        if (!currentPrice) return 0;
+        const s = (row.stage || '').toLowerCase();
+        const isSemiOrFinal = s.includes('final') || s.includes('semi');
+        const isKnockoutOrStrong = s.includes('16') || s.includes('32') || s.includes('quarter') || isStrongMatch(row.match);
+
+        if (isSemiOrFinal) {
+            return currentPrice * 0.9;
+        } else if (isKnockoutOrStrong) {
+            return Math.min(currentPrice * 0.85, fv * 6);
+        } else {
+            return Math.min(currentPrice * 0.75, fv * 4);
+        }
+    }
+
+    function getDecision(currentPrice, targetPrice) {
+        if (!currentPrice) return 'Unknown';
+        if (currentPrice <= targetPrice) return 'Buy';
+        if (currentPrice <= targetPrice * 1.5) return 'Watch';
+        return 'Avoid';
+    }
+
+    function getFamilyFit(row) {
+        try {
+            const match = row.date_time.match(/^([A-Za-z]+),.+·\s*(\d+):(\d+)([ap]m)/i);
+            if (!match) return "Moderate";
+            const dayOfWeek = match[1].toLowerCase();
+            const isWeekend = ['fri', 'sat', 'sun'].includes(dayOfWeek);
+            
+            let hour = parseInt(match[2]);
+            const ampm = match[4].toLowerCase();
+            if (ampm === 'pm' && hour !== 12) hour += 12;
+            if (ampm === 'am' && hour === 12) hour = 0;
+            const isLate = hour >= 21; // 9pm or later
+            const isDaytime = hour <= 18; // 6pm or earlier
+
+            const city = (row.host_city || '').toLowerCase();
+            const isMetlifePhilly = city.includes('jersey') || city.includes('philadelphia');
+            const isBoston = city.includes('boston');
+            const isEastCoast = isMetlifePhilly || isBoston;
+            const isToronto = city.includes('toronto');
+            
+            const stageLower = (row.stage || '').toLowerCase();
+            const isSemiOrFinal = stageLower.includes('final') || stageLower.includes('semi');
+
+            if (isLate || isBoston || isToronto) return "Hard with Kids";
+            if (isMetlifePhilly && isWeekend && isDaytime) return "Family Friendly";
+            if (!isEastCoast && !isToronto && !isSemiOrFinal) return "Not Worth Travel";
+            
+            return "Moderate";
+        } catch(e) {
+            return "Moderate";
+        }
+    }
+
+    function generateReason(row, multiplier, decision, familyFit) {
+        let reason = "";
+        const city = (row.host_city || '').split(',')[0];
+        const isEast = localCities.some(c => row.host_city && row.host_city.includes(c));
+
+        if (decision === 'Avoid') {
+            if (multiplier > 10) reason = `Absurdly overpriced (${multiplier.toFixed(1)}x face).`;
+            else reason = `Too expensive vs face value.`;
+        } else if (decision === 'Buy') {
+            reason = `Hitting target price! ${multiplier.toFixed(1)}x face.`;
+        } else {
+            reason = `Close to target. Keep watching.`;
+        }
+
+        if (familyFit === 'Family Friendly') reason += ` Great local weekend trip.`;
+        else if (familyFit === 'Hard with Kids') reason += ` Late night or far drive.`;
+        else if (familyFit === 'Not Worth Travel') reason += ` West coast/far travel for early stage.`;
+        else if (isEast) reason += ` Good East Coast option.`;
+
+        if (isStrongMatch(row.match)) reason += ` High demand teams.`;
+
+        return reason;
     }
 
     function processAggregatedData() {
@@ -82,11 +182,22 @@ document.addEventListener('DOMContentLoaded', () => {
             row.agg_lowest_price = lowestPrice;
             row.agg_best_url = bestUrl;
             row.agg_source = bestSource;
-            row.sg_price = sgPrice;
-            row.tp_price = tpPrice;
+            
+            row.fv = getFaceValue(row.stage);
+            row.multiplier = lowestPrice ? lowestPrice / row.fv : 0;
+            row.target_price = getTargetPrice(row, lowestPrice, row.fv);
+            row.decision = getDecision(lowestPrice, row.target_price);
+            row.family_cost = lowestPrice ? (lowestPrice * fcTickets) + fcParking + fcFood : 0;
+            row.family_fit = getFamilyFit(row);
+            row.reason = generateReason(row, row.multiplier, row.decision, row.family_fit);
+            
+            const { change, pct } = calculateDynamicChange(row, 7);
+            row.change7d = change;
+            row.pct7d = pct;
         });
     }
 
+    // --- Bootstrapping ---
     function loadData() {
         Promise.all([
             fetchCsv('seatgeek_data.csv'),
@@ -122,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .catch(err => {
                 document.getElementById('all-matches-body').innerHTML =
-                    `<tr><td colspan="9" class="text-center" style="color:red">Error loading data: ${err.message}</td></tr>`;
+                    `<tr><td colspan="8" class="text-center" style="color:red">Error loading data: ${err.message}</td></tr>`;
             });
     }
 
@@ -131,20 +242,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initDashboard() {
         populateFilters();
-        renderMetrics();
-        renderSmartRecommendations();
-        populateMatchSelector();
-        applyFilters();
+        
+        btnUpdateCost.addEventListener('click', () => {
+            fcTickets = parseInt(document.getElementById('fc-tickets').value) || 4;
+            fcParking = parseInt(document.getElementById('fc-parking').value) || 80;
+            fcFood = parseInt(document.getElementById('fc-food').value) || 120;
+            processAggregatedData();
+            refreshDashboard();
+        });
 
-        if (allData.length > 0) {
-            document.getElementById('match-selector').value = 0;
-            updateChart(0, getActivePeriod());
-        }
+        quickFilters.forEach(btn => {
+            btn.addEventListener('click', e => {
+                quickFilters.forEach(b => b.style.backgroundColor = '#64748b');
+                e.target.style.backgroundColor = '#2563eb';
+                currentQuickFilter = e.target.dataset.filter;
+                applyFilters();
+            });
+        });
 
         searchInput.addEventListener('input', applyFilters);
         stageFilter.addEventListener('change', applyFilters);
         regionFilter.addEventListener('change', applyFilters);
-        intervalFilter.addEventListener('change', applyFilters);
 
         chartToggles.forEach(btn => {
             btn.addEventListener('click', e => {
@@ -153,13 +271,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateChart(currentChartIndex, e.target.dataset.period);
             });
         });
+
+        refreshDashboard();
+
+        // Default chart to Best MetLife Watch
+        if (allData.length > 0) {
+            const metlifeMatches = allData.filter(r => r.agg_lowest_price && metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
+            metlifeMatches.sort((a, b) => a.decision === 'Buy' ? -1 : (a.multiplier - b.multiplier));
+            let bestIndex = 0;
+            if (metlifeMatches.length > 0) {
+                bestIndex = allData.indexOf(metlifeMatches[0]);
+            }
+            document.getElementById('match-selector').value = bestIndex;
+            updateChart(bestIndex, getActivePeriod());
+        }
     }
 
     function refreshDashboard() {
         renderMetrics();
-        renderSmartRecommendations();
+        renderDecisionBoard();
+        populateMatchSelector();
         applyFilters();
-        updateChart(currentChartIndex, getActivePeriod());
     }
 
     function getActivePeriod() {
@@ -179,19 +311,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         label.textContent = new Date(Math.max(...timestamps)).toLocaleString();
-    }
-
-    function calculateDaysUntil(dateString) {
-        try {
-            const match = dateString.match(/,\s*([A-Za-z]+)\s*(\d+)/);
-            if (!match) return null;
-            const targetDate = new Date(`${match[1]} ${match[2]}, 2026`);
-            const today = new Date();
-            const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
-            return diffDays > 0 ? diffDays : 0;
-        } catch (e) {
-            return null;
-        }
     }
 
     function calculateDynamicChange(row, intervalDays) {
@@ -220,21 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return { change, pct };
     }
 
-    function renderMetrics() {
-        const totalMatches = allData.length;
-        const validPrices = allData.map(d => d.agg_lowest_price).filter(p => p != null && !isNaN(p));
-        const cheapestPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
-        const avgPrice = validPrices.length > 0 ? validPrices.reduce((a, b) => a + b, 0) / validPrices.length : 0;
-        const localMatches = allData.filter(row =>
-            localCities.some(city => row.host_city && row.host_city.includes(city))
-        ).length;
-
-        document.getElementById('metric-total-matches').textContent = totalMatches;
-        document.getElementById('metric-cheapest-price').textContent = `$${cheapestPrice.toLocaleString()}`;
-        document.getElementById('metric-avg-price').textContent = `$${Math.round(avgPrice).toLocaleString()}`;
-        document.getElementById('metric-nj-matches').textContent = localMatches;
-    }
-
+    // --- UI Rendering ---
     function getFlagEmoji(countryName) {
         const flags = {
             'USA': '🇺🇸', 'Mexico': '🇲🇽', 'Canada': '🇨🇦', 'Brazil': '🇧🇷', 'Argentina': '🇦🇷',
@@ -259,95 +364,66 @@ document.addEventListener('DOMContentLoaded', () => {
         return countryName;
     }
 
-    function generateOpinion(row, multiplier, pct7d, isLocal) {
-        let reasons = [];
-        let emoji = '⭐';
-        if (pct7d <= -10) {
-            emoji = '📉';
-            reasons.push(`Dropped ${Math.abs(pct7d).toFixed(0)}% in 7 days`);
-        }
-        if (multiplier <= 2.5) {
-            emoji = '🔥';
-            reasons.push(`Rare ${multiplier.toFixed(1)}x premium`);
-        }
-        if (isLocal) {
-            reasons.push(`Local match in ${row.host_city.split(',')[0]}`);
-        }
-        
-        let stageLower = (row.stage || '').toLowerCase();
-        if (stageLower.includes('quarter') || stageLower.includes('semi') || stageLower.includes('final')) {
-            reasons.push(`High-prestige ${row.stage}`);
-        }
-
-        if (reasons.length === 0) {
-            reasons.push(`Solid value at ${multiplier.toFixed(1)}x premium`);
-        }
-
-        return `<span style="font-size:1.1rem">${emoji}</span> <span style="font-size:0.85rem; color:#475569;">${reasons.join('. ')}.</span>`;
+    function getDecisionBadge(decision, url) {
+        if (decision === 'Buy') return `<a href="${url}" target="_blank" class="badge badge-buy" style="display:inline-block; padding:8px 12px; text-decoration:none;">BUY NOW</a>`;
+        if (decision === 'Watch') return `<span class="badge badge-monitor" style="background:#fef08a; color:#854d0e; border:1px solid #fde047;">WATCH</span>`;
+        return `<span class="badge badge-wait">AVOID</span>`;
     }
 
-    function renderSmartRecommendations() {
-        const tbody = document.querySelector('#priority-deals-table tbody');
-        if (!tbody) return;
+    function renderMetrics() {
+        const validRows = allData.filter(d => d.agg_lowest_price != null && !isNaN(d.agg_lowest_price));
+        
+        const buys = validRows.filter(r => r.decision === 'Buy');
+        buys.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
+        document.getElementById('metric-best-buy').innerHTML = buys.length > 0 ? `${getFlagEmoji(buys[0].match)}<br><small>$${buys[0].agg_lowest_price}</small>` : 'None';
+
+        const locals = validRows.filter(r => localCities.some(c => r.host_city && r.host_city.includes(c)));
+        locals.sort((a,b) => a.agg_lowest_price - b.agg_lowest_price);
+        document.getElementById('metric-cheapest-local').innerHTML = locals.length > 0 ? `${getFlagEmoji(locals[0].match)}<br><small>$${locals[0].agg_lowest_price}</small>` : 'N/A';
+
+        const metlife = validRows.filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
+        metlife.sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
+        document.getElementById('metric-best-metlife').innerHTML = metlife.length > 0 ? `${getFlagEmoji(metlife[0].match)}<br><small>$${metlife[0].agg_lowest_price}</small>` : 'N/A';
+
+        const avoids = validRows.filter(r => r.decision === 'Avoid').length;
+        document.getElementById('metric-avoid-count').textContent = avoids;
+    }
+
+    function renderDecisionBoard() {
+        const tbody = document.getElementById('decision-board-body');
         tbody.innerHTML = '';
+        
+        const watchlistData = allData.filter(r => r.agg_lowest_price && (
+            localCities.some(c => r.host_city && r.host_city.includes(c)) || isStrongMatch(r.match)
+        ));
 
-        // Calculate Value Score for all tracked matches
-        const scoredData = allData.filter(r => r.agg_lowest_price).map(row => {
-            const fv = getFaceValue(row.stage);
-            const multiplier = row.agg_lowest_price / fv;
-            
-            const { pct } = calculateDynamicChange(row, 7); // 7-day trend
-            
-            let score = multiplier * 10; // Base penalty for high premium
-            
-            // Trend Bonus
-            if (pct < 0) score += pct; // E.g., -15% drop = -15 score
-            
-            // Prestige Bonus
-            const stageLower = (row.stage || '').toLowerCase();
-            if (stageLower.includes('final') && !stageLower.includes('semi') && !stageLower.includes('quarter')) score -= 20;
-            else if (stageLower.includes('semi')) score -= 15;
-            else if (stageLower.includes('quarter')) score -= 10;
-            else if (stageLower.includes('16')) score -= 5;
-            
-            // Local Bonus
-            const isLocal = localCities.some(city => row.host_city && row.host_city.includes(city));
-            if (isLocal) score -= 10;
-
-            return { row, score, multiplier, pct, isLocal };
+        watchlistData.sort((a,b) => {
+            if (a.decision === 'Buy' && b.decision !== 'Buy') return -1;
+            if (a.decision !== 'Buy' && b.decision === 'Buy') return 1;
+            return (a.agg_lowest_price/a.target_price) - (b.agg_lowest_price/b.target_price);
         });
 
-        // Sort by lowest score (best value)
-        scoredData.sort((a, b) => a.score - b.score);
-        const topPicks = scoredData.slice(0, 5);
-
-        if (topPicks.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No recommendations available.</td></tr>';
+        const top10 = watchlistData.slice(0, 10);
+        
+        if(top10.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No matches on watchlist.</td></tr>';
             return;
         }
 
-        topPicks.forEach(pick => {
-            const { row, multiplier, pct, isLocal } = pick;
+        top10.forEach(row => {
             const tr = document.createElement('tr');
-            
-            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
-            const daysUntil = calculateDaysUntil(row.date_time);
-            const countdownHtml = daysUntil ? `<br><span class="countdown-badge">Starts in ${daysUntil} Days</span>` : '';
-            const matchHtml = getFlagEmoji(row.match);
-            
-            const opinionHtml = generateOpinion(row, multiplier, pct, isLocal);
-            
             tr.innerHTML = `
-                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.host_city}</small>${countdownHtml}</td>
-                <td class="price-cell">${priceStr}<br><span style="font-size:0.75rem; color:#64748b; font-weight:normal;">${multiplier.toFixed(1)}x Face</span></td>
-                <td>${opinionHtml}</td>
-                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link" style="padding: 6px 12px; font-size: 0.75rem;">Buy</a></td>
+                <td><strong>${getFlagEmoji(row.match)}</strong><br><small style="color:#666">${row.host_city.split(',')[0]}</small></td>
+                <td class="price-cell">$${row.agg_lowest_price}<br><small style="color:#64748b; font-weight:normal;">Target: $${Math.round(row.target_price)}</small></td>
+                <td style="font-size:0.8rem; color:#475569;">${row.reason}</td>
+                <td>${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
         });
     }
 
     function populateFilters() {
+        stageFilter.innerHTML = '<option value="All">All Stages</option>';
         const stages = [...new Set(allData.map(d => d.stage))].filter(Boolean);
         stages.forEach(stage => {
             const option = document.createElement('option');
@@ -367,11 +443,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const cityStr = (row.host_city || '').toLowerCase();
             const matchesSearch = matchStr.includes(searchTerm) || cityStr.includes(searchTerm);
             const matchesStage = (stage === 'All') || (row.stage === stage);
+            
             let matchesRegion = true;
-            if (region === 'Local') {
-                matchesRegion = localCities.some(c => row.host_city && row.host_city.includes(c));
-            }
-            return matchesSearch && matchesStage && matchesRegion;
+            if (region === 'MetLife') matchesRegion = metlifeCities.some(c => row.host_city && row.host_city.includes(c));
+            if (region === 'PhillyBoston') matchesRegion = phillyBostonCities.some(c => row.host_city && row.host_city.includes(c));
+            if (region === 'Toronto') matchesRegion = cityStr.includes('toronto');
+
+            let matchesQuick = true;
+            if (currentQuickFilter === 'fv3') matchesQuick = row.multiplier > 0 && row.multiplier <= 3;
+            if (currentQuickFilter === 'east5') matchesQuick = row.multiplier > 0 && row.multiplier <= 5 && localCities.some(c => row.host_city && row.host_city.includes(c));
+            if (currentQuickFilter === 'metlife8') matchesQuick = row.multiplier > 0 && row.multiplier <= 8 && metlifeCities.some(c => row.host_city && row.host_city.includes(c));
+            if (currentQuickFilter === 'hide10') matchesQuick = row.multiplier > 0 && row.multiplier <= 10;
+
+            return matchesSearch && matchesStage && matchesRegion && matchesQuick;
         });
 
         renderMainTable(filtered);
@@ -382,69 +466,33 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No matches found matching criteria.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No matches found matching criteria.</td></tr>';
             return;
         }
 
-        const interval = intervalFilter.value;
-
         data.forEach(row => {
             const tr = document.createElement('tr');
-            const { change, pct } = calculateDynamicChange(row, interval);
-            const pctStr = `(${Math.abs(pct).toFixed(1)}%)`;
-
-            let changeHtml = '<span class="trend-flat"><span class="trend-arrow">-</span>$0</span>';
-            if (change > 0) {
-                changeHtml = `<span class="trend-up"><span class="trend-arrow">▲</span>+$${Math.abs(Math.round(change))} ${pctStr}</span>`;
-            } else if (change < 0) {
-                changeHtml = `<span class="trend-down"><span class="trend-arrow">▼</span>-$${Math.abs(Math.round(change))} ${pctStr}</span>`;
-            }
-
-            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
-            const noteStr = row.trend_note ? row.trend_note : '-';
+            
             const matchHtml = getFlagEmoji(row.match);
-            
-            // Platform Source Badge
-            let sourceBadge = '';
-            if(row.agg_source === 'TickPick') {
-                sourceBadge = `<span style="color:#0ea5e9; font-weight:600;">TickPick</span>`;
-            } else if (row.agg_source === 'SeatGeek') {
-                sourceBadge = `<span style="color:#002147; font-weight:600;">SeatGeek</span>`;
-            } else if (row.agg_source === 'Both') {
-                sourceBadge = `<span style="color:#8b5cf6; font-weight:600;">Both</span>`;
-            } else {
-                sourceBadge = `<span style="color:#94a3b8;">N/A</span>`;
-            }
+            const priceStr = row.agg_lowest_price ? `$${row.agg_lowest_price.toLocaleString()}` : 'N/A';
+            const targetStr = row.target_price ? `$${Math.round(row.target_price).toLocaleString()}` : 'N/A';
+            const famCostStr = row.family_cost ? `$${row.family_cost.toLocaleString()}` : 'N/A';
+            const ppCostStr = row.family_cost ? `($${Math.round(row.family_cost/fcTickets)}/pp)` : '';
 
-            // Face Value Logic
-            const fv = getFaceValue(row.stage);
-            const multiplier = row.agg_lowest_price ? (row.agg_lowest_price / fv).toFixed(1) : 0;
-            const fvBadge = row.agg_lowest_price ? `<br><span class="countdown-badge" style="background:#e2e8f0; color:#334155; margin-top:5px;">${multiplier}x Face Value</span>` : '';
-
-            let recHtml = '<span class="badge badge-monitor">Monitor</span>';
-            
-            if (!row.agg_lowest_price) {
-                recHtml = '<span class="badge badge-monitor">Unknown</span>';
-            } else if (multiplier <= 3.0) {
-                recHtml = `<span class="badge badge-buy">Good Value (< 3x)</span>`;
-            } else if (multiplier <= 5.0) {
-                recHtml = `<span class="badge badge-buy" style="background-color:#fef08a; color:#854d0e; border-color:#fde047;">Fair Price</span>`;
-            } else if (multiplier >= 10.0) {
-                recHtml = '<span class="badge badge-wait">Highly Overpriced</span>';
-            } else {
-                recHtml = '<span class="badge badge-wait">Above Market</span>';
-            }
+            let fitColor = '#64748b';
+            if (row.family_fit === 'Family Friendly') fitColor = '#059669';
+            if (row.family_fit === 'Hard with Kids') fitColor = '#d97706';
+            if (row.family_fit === 'Not Worth Travel') fitColor = '#dc2626';
 
             tr.innerHTML = `
-                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage}</small></td>
-                <td>${row.date_time}</td>
+                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}</small></td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td>${sourceBadge}</td>
-                <td class="price-cell">${priceStr}${fvBadge}</td>
-                <td>${changeHtml}</td>
-                <td style="font-size:0.8rem; color:#666; max-width:200px;">${noteStr}</td>
-                <td>${recHtml}</td>
-                <td><a href="${row.agg_best_url}" target="_blank" class="btn-link">Buy</a></td>
+                <td class="price-cell">${priceStr}<br><small style="color:#64748b; font-weight:normal;">Target: ${targetStr}</small></td>
+                <td><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
+                <td><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small></td>
+                <td><span style="color:${fitColor}; font-weight:500; font-size:0.85rem;">${row.family_fit}</span></td>
+                <td style="font-size:0.8rem; color:#475569; max-width:200px;">${row.reason}</td>
+                <td style="text-align:center;">${getDecisionBadge(row.decision, row.agg_best_url)}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -469,6 +517,23 @@ document.addEventListener('DOMContentLoaded', () => {
         currentChartIndex = index;
         const row = allData[index];
         if (!row) return;
+
+        const ch24 = calculateDynamicChange(row, 1);
+        const ch7 = calculateDynamicChange(row, 7);
+        
+        document.getElementById('chart-24h').textContent = ch24.change === 0 ? '-' : (ch24.change > 0 ? `+$${Math.round(ch24.change)}` : `-$${Math.abs(Math.round(ch24.change))}`);
+        document.getElementById('chart-24h').style.color = ch24.change > 0 ? '#dc2626' : (ch24.change < 0 ? '#16a34a' : '#64748b');
+        
+        document.getElementById('chart-7d').textContent = ch7.change === 0 ? '-' : (ch7.change > 0 ? `+$${Math.round(ch7.change)}` : `-$${Math.abs(Math.round(ch7.change))}`);
+        document.getElementById('chart-7d').style.color = ch7.change > 0 ? '#dc2626' : (ch7.change < 0 ? '#16a34a' : '#64748b');
+
+        if (row.agg_lowest_price && row.target_price) {
+            const diff = row.agg_lowest_price - row.target_price;
+            document.getElementById('chart-target-dist').textContent = diff > 0 ? `$${Math.round(diff)} above target` : `$${Math.abs(Math.round(diff))} BELOW target!`;
+            document.getElementById('chart-target-dist').style.color = diff > 0 ? '#dc2626' : '#16a34a';
+        } else {
+            document.getElementById('chart-target-dist').textContent = '-';
+        }
 
         const series = historyByEvent.get(String(row.event_id)) || [];
 
@@ -497,9 +562,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 datasets: [{
                     label: 'Get-in Price ($)',
                     data: dataPoints,
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                    borderWidth: 3,
+                    borderColor: '#002147',
+                    backgroundColor: 'rgba(0, 33, 71, 0.1)',
+                    borderWidth: 2,
                     pointBackgroundColor: '#2563eb',
                     pointBorderColor: '#fff',
                     pointRadius: 3,
@@ -529,30 +594,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 scales: {
                     x: {
                         grid: { color: '#e2e8f0' },
-                        ticks: {
-                            color: '#666',
-                            font: { family: 'Inter' },
-                            maxTicksLimit: 10,
-                            autoSkip: true,
-                        }
+                        ticks: { color: '#666', font: { family: 'Inter' }, maxTicksLimit: 10, autoSkip: true }
                     },
                     y: {
                         grid: { color: '#e2e8f0' },
-                        ticks: {
-                            color: '#666',
-                            font: { family: 'Inter' },
-                            callback: v => '$' + v
-                        }
+                        ticks: { color: '#666', font: { family: 'Inter' }, callback: v => '$' + v }
                     }
                 }
             }
         });
-
-        const chartHeader = document.querySelector('.chart-section .section-header h2');
-        if (chartHeader) {
-            chartHeader.textContent = filtered.length <= 1
-                ? '📈 Hourly Price Trend (collecting…)'
-                : '📈 Hourly Price Trend';
-        }
     }
 });
