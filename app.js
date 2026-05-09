@@ -62,6 +62,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const monthMap = {'Jan':'01', 'Feb':'02', 'Mar':'03', 'Apr':'04', 'May':'05', 'Jun':'06', 'Jul':'07', 'Aug':'08', 'Sep':'09', 'Oct':'10', 'Nov':'11', 'Dec':'12'};
 
+    // Venue-local timezone abbreviation for World Cup 2026 host cities (June/July = DST).
+    // Used to disambiguate the date_time strings returned by SeatGeek (which are venue-local).
+    const cityTzMap = [
+        ['New York / New Jersey', 'ET'],
+        ['East Rutherford', 'ET'],
+        ['Philadelphia', 'ET'],
+        ['Boston', 'ET'],
+        ['Foxborough', 'ET'],
+        ['Atlanta', 'ET'],
+        ['Miami', 'ET'],
+        ['Ft Lauderdale', 'ET'],
+        ['Toronto', 'ET'],
+        ['Houston', 'CT'],
+        ['Dallas', 'CT'],
+        ['Arlington', 'CT'],
+        ['Kansas City', 'CT'],
+        ['Mexico City', 'CT'],
+        ['Guadalajara', 'CT'],
+        ['Zapopan', 'CT'],
+        ['Monterrey', 'CT'],
+        ['Seattle', 'PT'],
+        ['Vancouver', 'PT'],
+        ['Los Angeles', 'PT'],
+        ['San Francisco', 'PT'],
+        ['Santa Clara', 'PT'],
+    ];
+    function venueTz(city) {
+        if (!city) return '';
+        for (const [needle, tz] of cityTzMap) {
+            if (city.includes(needle)) return tz;
+        }
+        return '';
+    }
+
     function normalizeString(str) {
         if (!str) return '';
         return str.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -739,7 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tr.innerHTML = `
-                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}</small></td>
+                <td><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></td>
                 <td>${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
                 <td class="price-cell">${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span></td>
                 <td>${getSignalBadge(row.signal)}</td>
