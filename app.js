@@ -65,6 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return localCities.some(c => row.host_city && row.host_city.includes(c));
     }
 
+    function isMetLifeOrPhilly(row) {
+        const city = row.host_city || '';
+        return metlifeCities.some(c => city.includes(c)) || city.includes('Philadelphia');
+    }
+
     function actionSortScore(row) {
         if (isPinned(String(row.event_id))) return 0;
         if (isTargetHit(row)) return 1;
@@ -873,10 +878,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         refreshDashboard();
 
-        // Default chart to Best MetLife Watch
+        // Default chart to best MetLife / Philly watch candidate
         if (allData.length > 0) {
-            const metlifeMatches = allData.filter(r => r.agg_lowest_price && metlifeCities.some(c => r.host_city && r.host_city.includes(c)));
-            metlifeMatches.sort((a, b) => a.decision === 'Buy' ? -1 : (a.multiplier - b.multiplier));
+            const metlifeMatches = allData.filter(r => r.agg_lowest_price && isMetLifeOrPhilly(r));
+            metlifeMatches.sort((a, b) => {
+                const score = actionSortScore(a) - actionSortScore(b);
+                if (score !== 0) return score;
+                return (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price);
+            });
             let bestIndex = 0;
             if (metlifeMatches.length > 0) {
                 bestIndex = allData.indexOf(metlifeMatches[0]);
@@ -1177,14 +1186,14 @@ document.addEventListener('DOMContentLoaded', () => {
             : `<span class="kpi-action muted">No local data</span><span class="kpi-match">Check sources</span><span class="kpi-price">N/A</span>`;
 
         const metlife = validRows
-            .filter(r => metlifeCities.some(c => r.host_city && r.host_city.includes(c)))
+            .filter(r => isMetLifeOrPhilly(r))
             .sort((a,b) => (a.agg_lowest_price / a.target_price) - (b.agg_lowest_price / b.target_price));
         const bestML = metlife[0];
         const mlState = bestML && bestML.agg_lowest_price <= bestML.target_price ? 'card-buy' : (bestML && bestML.agg_lowest_price <= bestML.target_price * 1.15 ? 'card-watch' : 'card-wait');
         setCardState('metric-card-metlife', mlState);
         document.getElementById('metric-best-metlife').innerHTML = bestML
-            ? `<span class="kpi-action">${bestML.agg_lowest_price <= bestML.target_price * 1.15 ? 'Close enough to watch' : 'Still expensive'}</span><span class="kpi-match">${matchLink(bestML, compactMatchName(bestML))}</span><span class="kpi-price">${formatMoney(bestML.agg_lowest_price)}</span><span class="kpi-sub">Target ${formatMoney(bestML.target_price)} · MetLife</span>${targetLine(bestML)}`
-            : `<span class="kpi-action muted">No MetLife data</span><span class="kpi-match">Check FIFA first</span><span class="kpi-price">N/A</span>`;
+            ? `<span class="kpi-action">${bestML.agg_lowest_price <= bestML.target_price * 1.15 ? 'Close enough to watch' : 'Still expensive'}</span><span class="kpi-match">${matchLink(bestML, compactMatchName(bestML))}</span><span class="kpi-price">${formatMoney(bestML.agg_lowest_price)}</span><span class="kpi-sub">Target ${formatMoney(bestML.target_price)} · ${escapeHtml(cityShort(bestML))}</span>${targetLine(bestML)}`
+            : `<span class="kpi-action muted">No MetLife/Philly data</span><span class="kpi-match">Check FIFA first</span><span class="kpi-price">N/A</span>`;
 
         const avoids = validRows.filter(r => r.decision === 'Avoid');
         const overpricedPct = validRows.length ? Math.round(avoids.length / validRows.length * 100) : 0;
