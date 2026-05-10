@@ -623,17 +623,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
         const diffMins = (now - observedAt) / 60000;
 
-        if (diffMins < 15) {
+        const hours = Math.round(diffMins / 60);
+
+        if (diffMins < 120) {
             badge.textContent = '● Live';
             badge.className = 'health-badge health-ok';
             badge.title = `Last update: ${observedAt.toLocaleString()}`;
             setWarning(false);
+        } else if (diffMins < 18 * 60) {
+            badge.textContent = '● Daily';
+            badge.className = 'health-badge health-ok';
+            badge.title = `Daily snapshot: ${observedAt.toLocaleString()} (${hours} hours ago)`;
+            setWarning(false);
+        } else if (diffMins < 30 * 60) {
+            badge.textContent = '● Aging';
+            badge.className = 'health-badge health-unknown';
+            badge.title = `Daily snapshot: ${observedAt.toLocaleString()} (${hours} hours ago)`;
+            setWarning(true, `Daily snapshot is about ${hours} hours old. Good for shortlist planning; re-check live listings before buying.`);
         } else {
             badge.textContent = '● Stale';
             badge.className = 'health-badge health-stale';
             badge.title = `Last update: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
-            const hours = Math.round(diffMins / 60);
-            setWarning(true, `Last ticket snapshot is about ${hours} hours old. Re-check live listings before buying.`);
+            setWarning(true, `Ticket snapshot is about ${hours} hours old. Treat prices as stale and refresh live listings before buying.`);
         }
     }
 
