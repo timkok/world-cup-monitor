@@ -19,7 +19,7 @@
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=dailyfresh-20260509">
+    <link rel="stylesheet" href="style.css?v=final-refine-20260514">
     <script>
       // Unregister old service worker to fix aggressive caching
       if ('serviceWorker' in navigator) {
@@ -163,13 +163,21 @@
                     <label style="font-size: 0.78rem; color: #64748b; font-weight: 500;">Budget:</label>
                     <input type="number" id="family-budget-input" value="1000" min="100" step="100" style="width: 70px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem;">
                 </span>
+                <span class="budget-presets" aria-label="Family budget presets">
+                    <button type="button" class="budget-preset-btn" data-budget="800">$800</button>
+                    <button type="button" class="budget-preset-btn" data-budget="1000">$1000</button>
+                    <button type="button" class="budget-preset-btn" data-budget="1500">$1500</button>
+                    <button type="button" class="budget-preset-btn" data-budget="2000">$2000</button>
+                </span>
                 <button id="update-family-cost" class="btn-link" style="background-color: #3b82f6; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Update Cost</button>
-                <button id="export-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px; margin-left: auto;">Export</button>
-                <button id="import-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Import</button>
+                <button id="export-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px; margin-left: auto;">Export My Settings</button>
+                <button id="import-settings" class="btn-link" style="background-color: #475569; color: white; padding: 3px 10px; font-size: 0.8rem; border-radius: 4px;">Import My Settings</button>
             </div>
             
             <div class="table-filters" style="margin-bottom: 10px;">
                 <button class="quick-filter btn-link" data-filter="all" style="background-color: #64748b;">Show All</button>
+                <button class="quick-filter btn-link" data-filter="local" style="background-color: #64748b;">Local Only</button>
+                <button class="quick-filter btn-link" data-filter="kids" style="background-color: #64748b;">Kids Friendly Only</button>
                 <button class="quick-filter btn-link" data-filter="fv3" style="background-color: #64748b;">Only < 3x Face</button>
                 <button class="quick-filter btn-link" data-filter="east5" style="background-color: #64748b;">East Coast < 5x</button>
                 <button class="quick-filter btn-link" data-filter="metlife8" style="background-color: #64748b;">MetLife < 8x</button>
@@ -298,6 +306,6 @@
 
 
     <!-- Custom JS -->
-    <script src="app.js?v=dailyfresh-20260509"></script>
+    <script src="app.js?v=final-refine-20260514"></script>
 </body>
 </html>

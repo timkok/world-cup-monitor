@@ -128,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chartToggles = document.querySelectorAll('.chart-toggle');
     const quickFilters = document.querySelectorAll('.quick-filter');
     const btnUpdateCost = document.getElementById('update-family-cost');
+    const FAMILY_COLS_KEY = 'wcm.hideFamilyCols.v1';
 
     let currentQuickFilter = 'hide10';
 
@@ -630,26 +631,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const hours = Math.round(diffMins / 60);
 
-        if (diffMins < 120) {
-            badge.textContent = '● Live';
+        if (diffMins < 90) {
+            badge.textContent = '● Fresh';
             badge.className = 'health-badge health-ok';
-            badge.title = `Last update: ${observedAt.toLocaleString()}`;
+            badge.title = `Fresh snapshot: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
             setWarning(false);
-        } else if (diffMins < 18 * 60) {
-            badge.textContent = '● Daily';
-            badge.className = 'health-badge health-ok';
-            badge.title = `Daily snapshot: ${observedAt.toLocaleString()} (${hours} hours ago)`;
-            setWarning(false);
-        } else if (diffMins < 30 * 60) {
-            badge.textContent = '● Aging';
-            badge.className = 'health-badge health-unknown';
-            badge.title = `Daily snapshot: ${observedAt.toLocaleString()} (${hours} hours ago)`;
-            setWarning(true, `Daily snapshot is about ${hours} hours old. Good for shortlist planning; re-check live listings before buying.`);
-        } else {
+        } else if (diffMins < 6 * 60) {
             badge.textContent = '● Stale';
+            badge.className = 'health-badge health-unknown';
+            badge.title = `Stale snapshot: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
+            setWarning(true, `Ticket snapshot is ${Math.round(diffMins)} minutes old. Good for shortlist planning; re-check live listings before buying.`);
+        } else {
+            badge.textContent = '● Very stale';
             badge.className = 'health-badge health-stale';
             badge.title = `Last update: ${observedAt.toLocaleString()} (${Math.round(diffMins)} mins ago)`;
-            setWarning(true, `Ticket snapshot is about ${hours} hours old. Treat prices as stale and refresh live listings before buying.`);
+            setWarning(true, `Ticket snapshot is about ${hours} hours old. Treat prices as very stale and refresh live listings before buying.`);
         }
     }
 
@@ -735,6 +731,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     pins: localStorage.getItem('wcm.pinned.v2'),
                     budget: localStorage.getItem('wcm.budget'),
                     targets: localStorage.getItem('wcm.userTargets.v1'),
+                    seenAlerts: localStorage.getItem('wcm.seenHits.v1'),
+                    hideFamilyCols: localStorage.getItem(FAMILY_COLS_KEY),
                     fcTickets: localStorage.getItem('fcTickets'),
                     fcParking: localStorage.getItem('fcParking'),
                     fcFood: localStorage.getItem('fcFood')
@@ -761,6 +759,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (settings.pins) localStorage.setItem('wcm.pinned.v2', settings.pins);
                     if (settings.budget) localStorage.setItem('wcm.budget', settings.budget);
                     if (settings.targets) localStorage.setItem('wcm.userTargets.v1', settings.targets);
+                    if (settings.seenAlerts) localStorage.setItem('wcm.seenHits.v1', settings.seenAlerts);
+                    if (settings.hideFamilyCols) localStorage.setItem(FAMILY_COLS_KEY, settings.hideFamilyCols);
                     if (settings.fcTickets) localStorage.setItem('fcTickets', settings.fcTickets);
                     if (settings.fcParking) localStorage.setItem('fcParking', settings.fcParking);
                     if (settings.fcFood) localStorage.setItem('fcFood', settings.fcFood);
@@ -774,11 +774,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toggleFamilyBtn = document.getElementById('toggle-family-btn');
         if (toggleFamilyBtn) {
+            const table = document.getElementById('all-matches-table');
+            const applyFamilyColumnState = () => {
+                const hidden = localStorage.getItem(FAMILY_COLS_KEY) === 'true';
+                table.classList.toggle('hide-family-cols', hidden);
+                toggleFamilyBtn.textContent = hidden ? 'Show Family Cols' : 'Hide Family Cols';
+                toggleFamilyBtn.style.backgroundColor = hidden ? '#3b82f6' : '#94a3b8';
+            };
+            applyFamilyColumnState();
             toggleFamilyBtn.addEventListener('click', () => {
-                const table = document.getElementById('all-matches-table');
-                table.classList.toggle('hide-family-cols');
-                toggleFamilyBtn.textContent = table.classList.contains('hide-family-cols') ? 'Show Family Cols' : 'Hide Family Cols';
-                toggleFamilyBtn.style.backgroundColor = table.classList.contains('hide-family-cols') ? '#3b82f6' : '#94a3b8';
+                const nextHidden = !table.classList.contains('hide-family-cols');
+                localStorage.setItem(FAMILY_COLS_KEY, String(nextHidden));
+                applyFamilyColumnState();
             });
         }        
         // Enable browser notifications for target hits
@@ -812,6 +819,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        document.querySelectorAll('.budget-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const budgetInput = document.getElementById('family-budget-input');
+                familyBudget = Number(btn.dataset.budget) || 1000;
+                if (budgetInput) budgetInput.value = familyBudget;
+                localStorage.setItem('wcm.budget', familyBudget);
+                document.querySelectorAll('.budget-preset-btn').forEach(b => b.classList.toggle('active', b === btn));
+                applyFilters();
+            });
+        });
+
         // Default highlight on hide10 button
         quickFilters.forEach(b => {
             if (b.dataset.filter === 'hide10') b.style.backgroundColor = '#2563eb';
@@ -821,9 +839,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const budgetInput = document.getElementById('family-budget-input');
         if (budgetInput) {
             budgetInput.value = familyBudget;
+            document.querySelectorAll('.budget-preset-btn').forEach(btn => {
+                btn.classList.toggle('active', Number(btn.dataset.budget) === familyBudget);
+            });
             budgetInput.addEventListener('change', () => {
                 familyBudget = parseInt(budgetInput.value) || 1000;
                 localStorage.setItem('wcm.budget', familyBudget);
+                document.querySelectorAll('.budget-preset-btn').forEach(btn => {
+                    btn.classList.toggle('active', Number(btn.dataset.budget) === familyBudget);
+                });
                 applyFilters(); // re-render table with updated budget status
             });
         }
@@ -947,6 +971,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return { label: 'Med', cls: 'conf-med', spread };
         }
         return { label: 'Low', cls: 'conf-low', spread: 0 };
+    }
+
+    function priceConfidenceTooltip(label) {
+        if (label === 'High') return 'High confidence: 3 sources close together.';
+        if (label === 'Med') return 'Medium confidence: 2 sources or moderate source spread.';
+        return 'Low confidence: 1 source or a large source spread.';
     }
 
     // --- Budget Status ---
@@ -1310,6 +1340,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let matchesQuick = true;
             if (currentQuickFilter === 'fv3') matchesQuick = row.multiplier > 0 && row.multiplier <= 3;
+            if (currentQuickFilter === 'local') matchesQuick = isLocalMatch(row);
+            if (currentQuickFilter === 'kids') matchesQuick = row.family_fit === 'Family Friendly';
             if (currentQuickFilter === 'east5') matchesQuick = row.multiplier > 0 && row.multiplier <= 5 && localCities.some(c => row.host_city && row.host_city.includes(c));
             if (currentQuickFilter === 'metlife8') matchesQuick = row.multiplier > 0 && row.multiplier <= 8 && metlifeCities.some(c => row.host_city && row.host_city.includes(c));
             if (currentQuickFilter === 'hide10') matchesQuick = row.multiplier > 0 && row.multiplier <= 10;
@@ -1397,7 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.innerHTML = `
                 <td data-label="Match"><div><strong>${matchHtml}</strong><br><small style="color:#666">${row.stage} • ${row.date_time}${venueTz(row.host_city) ? ' ' + venueTz(row.host_city) : ''}</small></div></td>
                 <td data-label="Venue">${row.venue}<br><small style="color:#666">${row.host_city}</small></td>
-                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span style="display:inline-flex;align-items:center;gap:4px;color:#64748b;font-weight:normal;font-size:0.78rem;">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"></span>${distToTarget}<div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}">${conf.label}${conf.spread ? ' ±' + formatMoney(conf.spread) : ''}</span></div></div></td>
+                <td data-label="Price" class="price-cell"><div>${priceStr} ${trendHtml}<br><span class="target-edit-row">Target: ${customMark}<input type="number" class="target-input" data-event-id="${row.event_id}" value="${targetVal}" min="1"><button type="button" class="edit-target-btn" data-event-id="${row.event_id}" title="Edit and save custom target">Edit Target</button></span>${distToTarget}<div style="margin-top:4px;">${renderSources(row)} <span class="${conf.cls}" title="${priceConfidenceTooltip(conf.label)}">${conf.label}${conf.spread ? ' ±' + formatMoney(conf.spread) : ''}</span></div></div></td>
                 <td data-label="Signal">${getSignalBadge(row.signal)}</td>
                 <td data-label="Multiplier"><span class="countdown-badge" style="background:#e2e8f0; color:#334155;">${row.multiplier.toFixed(1)}x FV</span></td>
                 <td data-label="Family $" class="family-col"><div><strong>${famCostStr}</strong><br><small style="color:#64748b;">${ppCostStr}</small><br><span class="${budgetSt.cls}">${budgetSt.label}</span></div></td>
@@ -1424,6 +1456,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateChart(currentChartIndex, getActivePeriod());
             });
             input.addEventListener('click', e => e.stopPropagation());
+        });
+        tbody.querySelectorAll('button.edit-target-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const input = [...tbody.querySelectorAll('input.target-input')]
+                    .find(el => String(el.dataset.eventId) === String(btn.dataset.eventId));
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            });
         });
 
         // Bind notes inputs
