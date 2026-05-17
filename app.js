@@ -352,14 +352,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function getDecision(currentPrice, targetPrice, signal) {
+    function getDecision(currentPrice, targetPrice, signal, forecast) {
         if (!currentPrice) return 'Unknown';
+
+        // Forecast-aware shortcuts. Only act on forecasts we trust.
+        const fc = forecast && forecast.confidence !== 'low' ? forecast : null;
+        const willDrop = fc && fc.predicted7d != null && fc.predicted7d <= currentPrice * 0.92;
+        const willRise = fc && fc.predicted7d != null && fc.predicted7d >= currentPrice * 1.08;
+
         if (currentPrice <= targetPrice) {
-            // At/below target — strongest buy when also at recent floor or rising
+            // At/below target — strong buy unless the forecast says it'll drop further.
+            if (willDrop) return 'Wait';
             return 'Buy';
         }
         if (currentPrice <= targetPrice * 1.15) {
-            // 15% above target — only Watch unless still declining (then Wait — let it drop)
+            // 15% above target. Use forecast first, then fall back to signal.
+            if (fc && fc.predicted7d != null && fc.predicted7d <= targetPrice * 1.02) return 'Wait';
+            if (willRise) return 'Buy';
             if (signal === 'Declining') return 'Wait';
             return 'Watch';
         }
@@ -395,6 +404,95 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (mean && currentPrice < mean * 0.97) signal = 'Declining';
         else if (mean && currentPrice > mean * 1.03) signal = 'Rising';
         return { signal, mean, min, std, cv };
+    }
+
+    // --- Price forecast from merged history ---
+    // Log-linear regression on the most recent window, anchored at the median
+    // of the last 24h to smooth out single-source noise. Returns predicted
+    // prices at +1d / +3d / +7d, a ±1σ band, and a confidence rating.
+    function computeForecast(eventId, currentPrice) {
+        const empty = {
+            predicted1d: null, predicted3d: null, predicted7d: null,
+            low7d: null, high7d: null,
+            slopePctPerDay: 0, residualStd: 0,
+            confidence: 'low', anchor: currentPrice || null, nPoints: 0
+        };
+        if (!currentPrice) return empty;
+        const series = historyByEvent.get(String(eventId)) || [];
+        if (series.length < 3) return empty;
+
+        const now = Date.now();
+        const day = 86400000;
+
+        // Pick the tightest window with enough data so the slope reflects
+        // recent behavior, not stale history from months ago.
+        const windows = [14, 30, 90];
+        let window = null;
+        for (const days of windows) {
+            const cutoff = now - days * day;
+            const w = series.filter(p => p.t.getTime() >= cutoff);
+            if (w.length >= 4) { window = w; break; }
+        }
+        if (!window) window = series;
+        if (window.length < 3) return empty;
+
+        // Anchor: median of last 24h observations (fall back to currentPrice).
+        const recent = window.filter(p => now - p.t.getTime() <= day).map(p => p.price);
+        let anchor = currentPrice;
+        if (recent.length) {
+            const sorted = [...recent].sort((a,b) => a - b);
+            anchor = sorted[Math.floor(sorted.length / 2)];
+        }
+
+        // Log-linear regression: log(price) = a + b * (days since window start).
+        const t0 = window[0].t.getTime();
+        const xs = window.map(p => (p.t.getTime() - t0) / day);
+        const ys = window.map(p => Math.log(Math.max(1, p.price)));
+        const n = xs.length;
+        const meanX = xs.reduce((s,v) => s+v, 0) / n;
+        const meanY = ys.reduce((s,v) => s+v, 0) / n;
+        let num = 0, den = 0;
+        for (let i = 0; i < n; i++) {
+            num += (xs[i] - meanX) * (ys[i] - meanY);
+            den += (xs[i] - meanX) ** 2;
+        }
+        let slope = den > 0 ? num / den : 0;
+
+        // Cap drift: tickets don't usefully extrapolate beyond ±2%/day.
+        const SLOPE_CAP = Math.log(1.02);
+        if (slope > SLOPE_CAP) slope = SLOPE_CAP;
+        if (slope < -SLOPE_CAP) slope = -SLOPE_CAP;
+
+        // Residual std of log-prices for confidence bands.
+        const intercept = meanY - slope * meanX;
+        let ssr = 0;
+        for (let i = 0; i < n; i++) {
+            const r = ys[i] - (intercept + slope * xs[i]);
+            ssr += r * r;
+        }
+        const residualStd = Math.sqrt(ssr / Math.max(1, n - 2));
+
+        const project = days => anchor * Math.exp(slope * days);
+        const predicted1d = project(1);
+        const predicted3d = project(3);
+        const predicted7d = project(7);
+        const band = Math.exp(residualStd);
+        const low7d = predicted7d / band;
+        const high7d = predicted7d * band;
+
+        // Confidence: prefer many points, narrow residuals, recent window.
+        const cv = residualStd; // log-space cv ≈ stdev/mean for small values
+        let confidence = 'low';
+        if (n >= 12 && cv < 0.05) confidence = 'high';
+        else if (n >= 6 && cv < 0.10) confidence = 'medium';
+
+        const slopePctPerDay = (Math.exp(slope) - 1) * 100;
+        return {
+            predicted1d, predicted3d, predicted7d,
+            low7d, high7d,
+            slopePctPerDay, residualStd,
+            confidence, anchor, nPoints: n
+        };
     }
 
     function getFamilyFit(row) {
@@ -441,7 +539,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (decision === 'Buy') {
             parts.push('Below target, buy candidate');
         } else if (decision === 'Wait') {
-            parts.push('Declining, let it drop');
+            // Prefer the forecast-driven explanation if we have one
+            const fc = row.forecast;
+            if (fc && fc.confidence !== 'low' && fc.predicted7d != null
+                && fc.predicted7d <= row.agg_lowest_price * 0.92) {
+                parts.push(`forecast ≈ ${formatMoney(fc.predicted7d)} in 7d`);
+            } else {
+                parts.push('Declining, let it drop');
+            }
         } else {
             parts.push('Close to target');
         }
@@ -518,7 +623,8 @@ document.addEventListener('DOMContentLoaded', () => {
             row.signal = sig.signal;
             row.signal_mean = sig.mean;
             row.signal_min = sig.min;
-            row.decision = getDecision(row.agg_lowest_price, row.target_price, row.signal);
+            row.forecast = computeForecast(row.event_id, row.agg_lowest_price);
+            row.decision = getDecision(row.agg_lowest_price, row.target_price, row.signal, row.forecast);
             row.reason = generateReason(row, row.multiplier, row.decision, row.family_fit);
             const { change, pct } = calculateDynamicChange(row, 7);
             row.change7d = change;
@@ -1529,6 +1635,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const sigEl = document.getElementById('chart-signal');
         if (sigEl) sigEl.innerHTML = getSignalBadge(row.signal || 'No data');
 
+        // Forecast cell: predicted 7d price, with ± band and confidence.
+        const fcEl = document.getElementById('chart-forecast');
+        if (fcEl) {
+            const fc = row.forecast;
+            if (fc && fc.predicted7d != null && fc.confidence !== 'low') {
+                const cur = row.agg_lowest_price;
+                const delta = cur ? fc.predicted7d - cur : 0;
+                const arrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '→');
+                const color = delta > 0 ? '#dc2626' : (delta < 0 ? '#16a34a' : '#64748b');
+                const band = fc.high7d != null && fc.low7d != null
+                    ? ` <span style="color:#94a3b8;">(±${formatMoney((fc.high7d - fc.low7d) / 2)})</span>`
+                    : '';
+                fcEl.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} ${formatMoney(fc.predicted7d)}</span>${band} <span style="color:#94a3b8; font-size:0.75rem;">${fc.confidence} conf</span>`;
+            } else if (row.forecast && row.forecast.predicted7d != null) {
+                fcEl.innerHTML = `<span style="color:#94a3b8;">${formatMoney(row.forecast.predicted7d)} (low conf)</span>`;
+            } else {
+                fcEl.textContent = '-';
+            }
+        }
+
         const series = historyByEvent.get(String(row.event_id)) || [];
 
         let filtered = series;
@@ -1540,11 +1666,44 @@ document.addEventListener('DOMContentLoaded', () => {
             filtered = series.filter(p => p.t.getTime() >= cutoff);
         }
 
+        // Build forecast extension: anchor at last observed point, then project
+        // forward at +1d / +3d / +7d using the row's regression slope.
+        const fc = row.forecast;
+        const forecastFuture = [];
+        if (fc && filtered.length && fc.predicted7d != null) {
+            const lastT = filtered[filtered.length - 1].t.getTime();
+            const lastPrice = filtered[filtered.length - 1].price;
+            const slopePerDay = Math.log(1 + fc.slopePctPerDay / 100);
+            for (const d of [1, 3, 7]) {
+                forecastFuture.push({
+                    t: new Date(lastT + d * 86400000),
+                    price: lastPrice * Math.exp(slopePerDay * d),
+                });
+            }
+        }
+
         const labels = filtered.map(p => p.t.toLocaleString([], {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         }));
         const dataPoints = filtered.map(p => p.price);
         const fullTimestamps = filtered.map(p => p.t.toLocaleString());
+
+        // Append forecast labels/data to the same x-axis so the dashed line
+        // visually continues past the actual history.
+        for (const f of forecastFuture) {
+            labels.push(f.t.toLocaleString([], { month: 'short', day: 'numeric' }));
+            fullTimestamps.push(f.t.toLocaleString() + ' (forecast)');
+        }
+        const forecastSeries = [
+            ...filtered.map(() => null),
+            ...forecastFuture.map(f => f.price),
+        ];
+        // Anchor the forecast line to the last actual point so it visually connects.
+        if (forecastFuture.length && filtered.length) {
+            forecastSeries[filtered.length - 1] = filtered[filtered.length - 1].price;
+        }
+        // Pad actuals with nulls so labels arrays align.
+        const dataPointsPadded = [...dataPoints, ...forecastFuture.map(() => null)];
 
         const canvas = document.getElementById('trendChart');
         const ctx = canvas.getContext('2d');
@@ -1557,28 +1716,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Source color per point so multi-source observations are visually distinguishable.
         const srcToColor = src => src === 'TP' ? '#0d4c8a' : src === 'VS' ? '#9d174d' : src === 'FIFA' ? '#166534' : '#b45309';
-        const pointColors = filtered.map(p => srcToColor(p.src));
+        // History points get a source color; future (forecast) points stay transparent.
+        const pointColors = [
+            ...filtered.map(p => srcToColor(p.src)),
+            ...forecastFuture.map(() => 'rgba(0,0,0,0)'),
+        ];
+        const pointRadii = [
+            ...filtered.map(() => 3.5),
+            ...forecastFuture.map(() => 0),
+        ];
+
+        const datasets = [{
+            label: 'Get-in Price ($)',
+            data: dataPointsPadded,
+            borderColor: '#0b3d7a',
+            backgroundColor: grad,
+            borderWidth: 2.5,
+            pointBackgroundColor: pointColors,
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            pointRadius: pointRadii,
+            pointHoverRadius: 6,
+            fill: true,
+            tension: 0.4,           // smoother curve
+            cubicInterpolationMode: 'monotone',
+            spanGaps: true,
+        }];
+        if (forecastFuture.length) {
+            datasets.push({
+                label: 'Forecast',
+                data: forecastSeries,
+                borderColor: '#2563eb',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderDash: [6, 4],
+                pointBackgroundColor: '#2563eb',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 1,
+                pointRadius: [
+                    ...filtered.map(() => 0),
+                    ...forecastFuture.map(() => 3),
+                ],
+                pointHoverRadius: 5,
+                fill: false,
+                tension: 0.2,
+                spanGaps: false,
+            });
+        }
 
         trendChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
-                datasets: [{
-                    label: 'Get-in Price ($)',
-                    data: dataPoints,
-                    borderColor: '#0b3d7a',
-                    backgroundColor: grad,
-                    borderWidth: 2.5,
-                    pointBackgroundColor: pointColors,
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 1.5,
-                    pointRadius: 3.5,
-                    pointHoverRadius: 6,
-                    fill: true,
-                    tension: 0.4,           // smoother curve
-                    cubicInterpolationMode: 'monotone',
-                    spanGaps: true,
-                }]
+                datasets,
             },
             options: {
                 responsive: true,
@@ -1598,7 +1788,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         callbacks: {
                             title: ctx => fullTimestamps[ctx[0].dataIndex] || '',
                             label: ctx => {
-                                const src = filtered[ctx.dataIndex] && filtered[ctx.dataIndex].src;
+                                const i = ctx.dataIndex;
+                                if (i >= filtered.length) {
+                                    return '$' + ctx.parsed.y.toLocaleString() + ' (forecast)';
+                                }
+                                const src = filtered[i] && filtered[i].src;
                                 const label = src ? ` (${src})` : '';
                                 return '$' + ctx.parsed.y.toLocaleString() + label;
                             },

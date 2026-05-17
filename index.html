@@ -19,7 +19,7 @@
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=final-refine-20260514">
+    <link rel="stylesheet" href="style.css?v=forecast-20260517">
     <script>
       // Unregister old service worker to fix aggressive caching
       if ('serviceWorker' in navigator) {
@@ -126,11 +126,12 @@
                         </div>
                     </div>
                 </div>
-                <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.85rem; background: #f8fafc; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
-                    <div style="flex: 1;"><strong>24h:</strong> <span id="chart-24h">-</span></div>
-                    <div style="flex: 1;"><strong>7d:</strong> <span id="chart-7d">-</span></div>
-                    <div style="flex: 1;"><strong>Vs Target:</strong> <span id="chart-target-dist">-</span></div>
-                    <div style="flex: 1;"><strong>Signal:</strong> <span id="chart-signal">-</span></div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px 15px; margin-bottom: 10px; font-size: 0.85rem; background: #f8fafc; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                    <div style="flex: 1 1 90px;"><strong>24h:</strong> <span id="chart-24h">-</span></div>
+                    <div style="flex: 1 1 90px;"><strong>7d:</strong> <span id="chart-7d">-</span></div>
+                    <div style="flex: 1 1 140px;"><strong>Vs Target:</strong> <span id="chart-target-dist">-</span></div>
+                    <div style="flex: 1 1 140px;" title="Projected get-in price 7 days from now, based on recent multi-source history."><strong>Forecast 7d:</strong> <span id="chart-forecast">-</span></div>
+                    <div style="flex: 1 1 90px;"><strong>Signal:</strong> <span id="chart-signal">-</span></div>
                 </div>
                 <div style="position: relative; height: 250px; width: 100%;">
                     <canvas id="trendChart"></canvas>
@@ -306,6 +307,6 @@
 
 
     <!-- Custom JS -->
-    <script src="app.js?v=final-refine-20260514"></script>
+    <script src="app.js?v=forecast-20260517"></script>
 </body>
 </html>
