@@ -113,7 +113,7 @@ def run_health_checks() -> bool:
         if time_col:
             non_null_times = df[time_col].dropna()
             try:
-                pd.to_datetime(non_null_times)
+                pd.to_datetime(non_null_times, format='ISO8601', utc=True, errors='raise')
                 print(f"  ✔ Timestamps parse correctly.")
             except Exception as e:
                 print(f"  ❌ ERROR: Found invalid timestamp formatting in '{time_col}': {e}")
