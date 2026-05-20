@@ -32,13 +32,24 @@
     </script>
 </head>
 <body>
+    <!-- Data Freshness Strip -->
+    <div id="freshness-strip" class="freshness-strip">
+        <div class="freshness-container">
+            <span class="freshness-title">📡 Source Freshness:</span>
+            <span id="freshness-sg" class="freshness-pill pill-unknown">SeatGeek: Checking...</span>
+            <span id="freshness-tp" class="freshness-pill pill-unknown">TickPick: Checking...</span>
+            <span id="freshness-vs" class="freshness-pill pill-unknown">Vivid Seats: Checking...</span>
+            <span id="freshness-hist" class="freshness-pill pill-unknown">History: Checking...</span>
+            <span id="freshness-countdown" class="freshness-countdown">Next update in: <span id="update-countdown">--:--</span></span>
+        </div>
+    </div>
+
     <header class="top-banner">
         <div class="banner-content" style="position: relative;">
-            <h1>2026 World Cup Ticket Monitor</h1>
-            <p>Live tracking and strategic insights for purchasing secondary market tickets.</p>
+            <h1>2026 World Cup Ticket Strategy Dashboard</h1>
+            <p>Convert public ticket feeds into strategic buying opportunities.</p>
             <p style="margin-top: 10px; font-size: 0.85rem; color: #93c5fd;">
-                Last Updated: <span id="last-updated-time">Loading...</span>
-                <span id="data-health-badge" class="health-badge health-unknown">Checking status...</span>
+                Last Sync Date: <span id="last-updated-time">Loading...</span>
             </p>
             <button id="dark-mode-toggle" style="position: absolute; top: 0; right: 0; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">🌙 Dark Mode</button>
         </div>
@@ -51,7 +62,71 @@
                 <strong>🔔 Target hits:</strong>
                 <span id="alert-list"></span>
             </div>
-            <button id="enable-notify" class="alert-bar-btn">Enable browser alerts</button>
+            <button id="enable-notifications" class="alert-bar-btn">Enable browser alerts</button>
+        </section>
+
+        <!-- Personal Purchase Profile Section -->
+        <section class="preferences-section">
+            <div class="preferences-header" id="prefs-toggle-header" style="cursor: pointer;">
+                <h2>⚙️ Personal Purchasing Profile & Settings <span id="prefs-toggle-arrow">▲</span></h2>
+                <p>Configure home city, drive limits, ticket counts, and budget caps to personalize target triggers.</p>
+            </div>
+            <div id="preferences-form-container" class="preferences-grid">
+                <div class="pref-col">
+                    <label for="pref-home-city">Home Base City</label>
+                    <select id="pref-home-city">
+                        <option value="New York / New Jersey">New York / New Jersey</option>
+                        <option value="Philadelphia, PA">Philadelphia, PA</option>
+                        <option value="Boston, MA">Boston, MA</option>
+                        <option value="Dallas, TX">Dallas, TX</option>
+                        <option value="Los Angeles, CA">Los Angeles, CA</option>
+                        <option value="Miami, FL">Miami, FL</option>
+                        <option value="Seattle, WA">Seattle, WA</option>
+                        <option value="Toronto, ON">Toronto, ON</option>
+                        <option value="Vancouver, BC">Vancouver, BC</option>
+                    </select>
+                </div>
+                <div class="pref-col">
+                    <label for="pref-max-drive">Max Driving Distance (Hours)</label>
+                    <input type="number" id="pref-max-drive" min="1" max="15" value="4">
+                </div>
+                <div class="pref-col">
+                    <label for="pref-tickets-count">Tickets Wanted</label>
+                    <input type="number" id="pref-tickets-count" min="1" max="10" value="4">
+                </div>
+                <div class="pref-col">
+                    <label for="pref-max-budget">Max Family Budget ($)</label>
+                    <input type="number" id="pref-max-budget" min="100" max="50000" step="100" value="1000">
+                </div>
+                <div class="pref-col">
+                    <label for="pref-team-premium">Team Premium Tolerance</label>
+                    <select id="pref-team-premium">
+                        <option value="low">Low (Strict budgets, buy floor only)</option>
+                        <option value="medium" selected>Medium (Accept reasonable premium)</option>
+                        <option value="high">High (Willing to pay extra for strong matchups)</option>
+                    </select>
+                </div>
+                <div class="pref-col">
+                    <label for="pref-fifa-pref">FIFA Official Resale Preference</label>
+                    <select id="pref-fifa-pref">
+                        <option value="cheapest">Cheapest Available Source</option>
+                        <option value="official">Always Prefer Official (Wait for drop)</option>
+                        <option value="trusted">Only Official + High Confidence Secondary</option>
+                    </select>
+                </div>
+                <div class="pref-col-full">
+                    <label>Filter Match Venues (Multi-select, none = all)</label>
+                    <div id="pref-venues-checkboxes" class="venues-checkbox-grid">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <div class="pref-col-full" style="display: flex; gap: 20px;">
+                    <label style="display: inline-flex; align-items: center; cursor: pointer; gap: 8px;">
+                        <input type="checkbox" id="pref-avoid-late" checked>
+                        <span>Avoid late games (starts at/after 9:00 PM) for family comfort</span>
+                    </label>
+                </div>
+            </div>
         </section>
 
         <!-- Today's Action Summary Banner -->
@@ -79,30 +154,66 @@
             </div>
         </section>
 
+        <!-- Upgraded Watchlist Section -->
+        <section class="watchlist-section">
+            <div class="section-header">
+                <h2>📋 My Strategy Console & Watchlist</h2>
+                <p>Personalized matches segmented by buying decisions.</p>
+            </div>
+            
+            <div class="watchlist-groups-container">
+                <div class="watchlist-group group-buy" id="wl-buy-group">
+                    <h3>🎯 Buy Now <span class="group-count" id="wl-buy-count">(0)</span></h3>
+                    <div class="watchlist-grid" id="watchlist-buy-cards">
+                        <div class="empty-cards">No matches meet your buy triggers.</div>
+                    </div>
+                </div>
 
-        <div class="split-layout">
-            <!-- Left: Top Deals -->
-            <section class="mini-table-section flex-1">
-                <div class="section-header">
-                    <h2>📋 My Watchlist</h2>
-                    <p>📌 Pinned + 🤖 Auto (Local & Strong Teams)</p>
+                <div class="watchlist-group group-watch" id="wl-watch-group">
+                    <h3>👁️ Watch Closely <span class="group-count" id="wl-watch-count">(0)</span></h3>
+                    <div class="watchlist-grid" id="watchlist-watch-cards">
+                        <div class="empty-cards">No matches are close to your target price.</div>
+                    </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="data-table" id="priority-deals-table">
-                        <thead>
-                            <tr>
-                                <th>Match & City</th>
-                                <th>Price vs Target</th>
-                                <th>Reason</th>
-                                <th>Decision</th>
-                            </tr>
-                        </thead>
-                        <tbody id="decision-board-body">
-                            <tr><td colspan="4">Loading...</td></tr>
-                        </tbody>
-                    </table>
+
+                <div class="watchlist-group group-nice" id="wl-nice-group">
+                    <h3>💡 Nice to Have <span class="group-count" id="wl-nice-count">(0)</span></h3>
+                    <div class="watchlist-grid" id="watchlist-nice-cards">
+                        <div class="empty-cards">Add local matches or custom targets to watch here.</div>
+                    </div>
                 </div>
-            </section>
+            </div>
+        </section>
+
+        <div class="split-layout" style="display: none;">
+            <!-- Left section is removed since we replaced it with the watchlist. -->
+        </div>
+        
+        <!-- Interactive Chart & Selector Area -->
+        <section class="chart-section" style="margin-bottom: 20px;">
+            <div class="section-header">
+                <h2>📈 Hourly Price Trend Analysis</h2>
+                <div>
+                    <select id="match-selector" class="filter-select" style="margin-right: 5px;">
+                        <option>Loading matches...</option>
+                    </select>
+                    <div class="chart-toggles" style="display:inline-block;">
+                        <button class="chart-toggle active" data-period="all">All</button>
+                        <button class="chart-toggle" data-period="1m">1M</button>
+                        <button class="chart-toggle" data-period="1w">1W</button>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.85rem; background: #f8fafc; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0; flex-wrap: wrap;">
+                <div><strong>24h Delta:</strong> <span id="chart-24h">-</span></div>
+                <div><strong>7d Delta:</strong> <span id="chart-7d">-</span></div>
+                <div><strong>Vs Target:</strong> <span id="chart-target-dist">-</span></div>
+                <div><strong>Trend Signal:</strong> <span id="chart-signal">-</span></div>
+            </div>
+            <div style="position: relative; height: 300px; width: 100%;">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </section>
 
             <!-- Right: Chart -->
             <section class="chart-section flex-1">
@@ -282,11 +393,19 @@
                     </div>
                 </div>
             </div>
-        </section>
     </div>
 
+    <!-- Details Explanation Modal -->
+    <div id="details-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-content">
+            <span class="close-modal" id="close-details-modal" aria-label="Close modal">&times;</span>
+            <div id="modal-body-content">
+                <!-- Populated dynamically by render.js -->
+            </div>
+        </div>
+    </div>
 
     <!-- Custom JS -->
-    <script src="app.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>

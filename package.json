@@ -1,0 +1,8 @@
+{
+  "name": "world-cup-monitor",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node test/run_tests.js"
+  }
+}

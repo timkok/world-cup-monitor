@@ -631,3 +631,387 @@ h1, h2, h3, h4 { color: var(--primary-color); }
         border: none;
     }
 }
+
+/* Premium Strategist Console Additions */
+
+/* 1. Freshness Strip */
+.freshness-strip {
+    background-color: #0f172a;
+    color: #cbd5e1;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    border-bottom: 1px solid #1e293b;
+}
+.freshness-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.freshness-title {
+    font-weight: 600;
+    color: #94a3b8;
+}
+.freshness-pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.pill-fresh { background-color: #064e3b; color: #6ee7b7; border: 1px solid #047857; }
+.pill-aging { background-color: #78350f; color: #fde68a; border: 1px solid #b45309; }
+.pill-stale { background-color: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; }
+.pill-unknown { background-color: #334155; color: #cbd5e1; border: 1px solid #475569; }
+.freshness-countdown {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+/* 2. Preferences / Profile Section */
+.preferences-section {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 25px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+.preferences-header h2 {
+    font-size: 1.15rem;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.preferences-header p {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.preferences-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+.pref-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pref-col label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.pref-col input, .pref-col select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+}
+.pref-col-full {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.pref-col-full label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.venues-checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    background-color: var(--card-bg);
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+.venues-checkbox-grid label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--text-main);
+}
+
+/* 3. Watchlist Section & Cards */
+.watchlist-section {
+    margin-bottom: 30px;
+}
+.watchlist-groups-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 15px;
+}
+.watchlist-group {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.watchlist-group h3 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+}
+.group-count {
+    margin-left: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: normal;
+}
+.watchlist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+}
+.empty-cards {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    background: var(--card-bg);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+}
+
+/* Watchlist Card */
+.watchlist-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+.watchlist-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.card-match-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-main);
+}
+.card-meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.card-price-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px dashed var(--border-color);
+    border-bottom: 1px dashed var(--border-color);
+}
+.card-price {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--primary-color);
+}
+.card-target {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: right;
+}
+.card-difference {
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.card-reason {
+    font-size: 0.8rem;
+    color: var(--text-main);
+    line-height: 1.4;
+}
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+}
+.card-pin-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+/* Card Borders by Decision */
+.watchlist-card.card-buy {
+    border-left: 4px solid #16a34a;
+}
+.watchlist-card.card-watch {
+    border-left: 4px solid #d97706;
+}
+.watchlist-card.card-nice {
+    border-left: 4px solid #3b82f6;
+}
+
+/* 4. Details Explanation Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.25s ease;
+}
+.modal-content {
+    background-color: var(--card-bg);
+    margin: 8% auto;
+    padding: 24px;
+    border: 1px solid var(--border-color);
+    width: 90%;
+    max-width: 600px;
+    border-radius: 16px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+    position: relative;
+    color: var(--text-main);
+}
+.close-modal {
+    position: absolute;
+    right: 20px;
+    top: 15px;
+    color: var(--text-muted);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.close-modal:hover {
+    color: var(--text-main);
+}
+
+/* Modal Content Styling */
+.modal-match-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+.modal-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    background: var(--secondary-color);
+    padding: 12px;
+    border-radius: 8px;
+}
+.modal-prices-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+.modal-prices-table th, .modal-prices-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.85rem;
+}
+.modal-prices-table th {
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.modal-section-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+.modal-decision-banner {
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-decision-banner.buy { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.modal-decision-banner.watch { background-color: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+.modal-decision-banner.wait { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.modal-decision-banner.avoid { background-color: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+.modal-custom-target-block {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background-color: var(--secondary-color);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+.modal-custom-target-block input {
+    width: 100px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+/* Warnings/Checks list */
+.modal-checklist {
+    list-style: none;
+    margin-bottom: 20px;
+}
+.modal-checklist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+}
+.checklist-icon-ok { color: #16a34a; }
+.checklist-icon-warn { color: #d97706; }
+.checklist-icon-err { color: #dc2626; }
+
+/* Responsive Grid Adjustments */
+@media (max-width: 768px) {
+    .preferences-grid {
+        grid-template-columns: 1fr;
+    }
+    .modal-content {
+        margin: 15% auto;
+        padding: 16px;
+        border-radius: 12px;
+    }
+}
+
