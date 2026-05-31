@@ -1,8 +1,8 @@
 // DOM Rendering and UI Interaction Engine
 
-import { savePins, isPinned, saveUserTargets } from './storage.js';
-import { updateChart } from './charts.js';
-import { LOCAL_CITIES } from './config.js';
+import { savePins, isPinned, saveUserTargets } from './storage.js?v=20260531-realtime';
+import { updateChart } from './charts.js?v=20260531-realtime';
+import { LOCAL_CITIES } from './config.js?v=20260531-realtime';
 
 export function escapeHtml(str) {
     if (typeof str !== 'string') return str;
@@ -41,27 +41,32 @@ export function getFlagEmoji(countryName) {
 export function renderFreshness(freshness) {
     const renderPill = (id, data, label) => {
         const el = document.getElementById(id);
-        if (!el) return;
-        el.className = `freshness-pill pill-${data.status.toLowerCase()}`;
+        if (!el || !data) return;
+        const statusClass = String(data.status || 'unknown').toLowerCase().replace(/\s+/g, '-');
+        el.className = `freshness-pill pill-${statusClass}`;
         if (data.status === 'Missing') {
             el.textContent = `${label}: N/A`;
             el.title = 'No recent updates or file missing';
         } else {
             const minAgo = Math.round(data.ageHours * 60);
             el.textContent = `${label}: ${data.status} (${minAgo}m ago)`;
-            el.title = `Last sync: ${data.date.toLocaleString()}`;
+            const rowCount = data.rows != null ? ` | rows: ${data.rows}` : '';
+            el.title = `Last sync: ${data.date.toLocaleString()}${rowCount}`;
         }
     };
 
+    renderPill('freshness-aggregate', freshness.Aggregate, 'Overall');
     renderPill('freshness-sg', freshness.SeatGeek, 'SeatGeek');
     renderPill('freshness-tp', freshness.TickPick, 'TickPick');
     renderPill('freshness-vs', freshness.Vivid, 'Vivid Seats');
+    renderPill('freshness-fifa', freshness.FIFA, 'FIFA');
     renderPill('freshness-hist', freshness.History, 'History');
 }
 
 export function populateVenueCheckboxes(allData, selectedVenues, onChangeCallback) {
     const container = document.getElementById('pref-venues-checkboxes');
     if (!container) return;
+    const activeVenues = Array.isArray(selectedVenues) ? selectedVenues : [];
 
     const venues = [...new Set(allData.map(d => d.venue))].filter(Boolean).sort();
     container.innerHTML = '';
@@ -71,7 +76,7 @@ export function populateVenueCheckboxes(allData, selectedVenues, onChangeCallbac
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.value = venue;
-        input.checked = selectedVenues.includes(venue);
+        input.checked = activeVenues.includes(venue);
         
         input.addEventListener('change', () => {
             const active = Array.from(container.querySelectorAll('input:checked')).map(i => i.value);

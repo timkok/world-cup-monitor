@@ -1,9 +1,10 @@
 // Data Loader, Merging and Freshness Orchestrator
 
-import { getFaceValue, getTargetPrice, computeConfidenceScore, detectAnomalies, getDecision } from './pricing.js';
-import { matchByDateAndTeams, getMappingMetadata } from './matching.js';
-import { loadUserTargets } from './storage.js';
-import { getPreferences } from './preferences.js';
+import { getFaceValue, getTargetPrice, computeConfidenceScore, detectAnomalies, getDecision } from './pricing.js?v=20260531-realtime';
+import { matchByDateAndTeams, getMappingMetadata } from './matching.js?v=20260531-realtime';
+import { loadUserTargets } from './storage.js?v=20260531-realtime';
+import { getPreferences } from './preferences.js?v=20260531-realtime';
+import { LOCAL_CITIES } from './config.js?v=20260531-realtime';
 
 function fetchCsv(url) {
     return fetch(url)
@@ -18,6 +19,14 @@ function fetchCsv(url) {
                 skipEmptyLines: true
             });
             return parsed.data || [];
+        });
+}
+
+function fetchJson(url) {
+    return fetch(url)
+        .then(res => {
+            if (!res.ok) throw new Error(`HTTP error! status=${res.status}`);
+            return res.json();
         });
 }
 
@@ -48,9 +57,31 @@ export function calculateFreshnessAge(observedAtStr) {
     if (isNaN(date.getTime())) return { ageHours: Infinity, status: 'Missing' };
     const ageHours = (Date.now() - date.getTime()) / (1000 * 60 * 60);
     let status = 'Fresh';
-    if (ageHours > 24) status = 'Stale';
-    else if (ageHours > 6) status = 'Aging';
+    if (ageHours > 6) status = 'Very stale';
+    else if (ageHours > 1.5) status = 'Stale';
     return { ageHours, status, date };
+}
+
+function statusEntryToFreshness(entry) {
+    if (!entry) return calculateFreshnessAge(null);
+    const base = calculateFreshnessAge(entry.latest_observed_at);
+    return {
+        ...base,
+        status: entry.status || base.status,
+        ageHours: entry.age_minutes != null ? entry.age_minutes / 60 : base.ageHours,
+        rows: entry.rows,
+        pricedRows: entry.priced_rows,
+        generatedAt: entry.generated_at,
+    };
+}
+
+function latestIso(values) {
+    const timestamps = values
+        .filter(Boolean)
+        .map(value => new Date(value).getTime())
+        .filter(value => !isNaN(value));
+    if (!timestamps.length) return null;
+    return new Date(Math.max(...timestamps)).toISOString();
 }
 
 export function loadAllData() {
@@ -65,7 +96,8 @@ export function loadAllData() {
         fetchCsv('tickpick_history.csv').catch(() => []),
         fetchCsv('vivid_history.csv').catch(() => []),
         fetchAliases(),
-    ]).then(([sgSnapshot, tpSnapshot, vsSnapshot, sgHistory, tpHistory, vsHistory, teamAliases]) => {
+        fetchJson('realtime_status.json').catch(() => null),
+    ]).then(([sgSnapshot, tpSnapshot, vsSnapshot, sgHistory, tpHistory, vsHistory, teamAliases, realtimeStatus]) => {
         
         // 1. Core mapping & snapshots merge
         const snapshot = sgSnapshot.map(row => {
@@ -80,23 +112,30 @@ export function loadAllData() {
             row.vs_event_id = vsMatch ? vsMatch.matchedRow.vivid_event_id : null;
 
             // Pick cheapest across sources
+            row.sg_observed_at = row.latest_observed_at || null;
+            row.tp_observed_at = tpMatch ? tpMatch.matchedRow.observed_at : null;
+            row.vs_observed_at = vsMatch ? vsMatch.matchedRow.observed_at : null;
+            row.latest_source_observed_at = latestIso([row.sg_observed_at, row.tp_observed_at, row.vs_observed_at]);
+
             const candidates = [
-                { src: 'SeatGeek', price: sgPrice, url: row.url },
-                { src: 'TickPick', price: tpPrice, url: tpMatch ? tpMatch.matchedRow.url : null },
-                { src: 'Vivid',    price: vsPrice, url: vsMatch ? vsMatch.matchedRow.url : null },
+                { src: 'SeatGeek', price: sgPrice, url: row.url, observedAt: row.sg_observed_at },
+                { src: 'TickPick', price: tpPrice, url: tpMatch ? tpMatch.matchedRow.url : null, observedAt: row.tp_observed_at },
+                { src: 'Vivid',    price: vsPrice, url: vsMatch ? vsMatch.matchedRow.url : null, observedAt: row.vs_observed_at },
             ].filter(c => c.price != null);
 
-            let lowestPrice = null, bestUrl = row.url, bestSource = 'N/A';
+            let lowestPrice = null, bestUrl = row.url, bestSource = 'N/A', bestObservedAt = null;
             if (candidates.length) {
                 candidates.sort((a, b) => a.price - b.price);
                 lowestPrice = candidates[0].price;
                 bestUrl = candidates[0].url;
                 bestSource = candidates[0].src;
+                bestObservedAt = candidates[0].observedAt;
             }
 
             row.agg_lowest_price = lowestPrice;
             row.agg_best_url = bestUrl;
             row.agg_source = bestSource;
+            row.agg_observed_at = bestObservedAt;
             
             row.sg_price = sgPrice;
             row.sg_url = row.url;
@@ -208,18 +247,41 @@ export function loadAllData() {
         const vsTimes = vsSnapshot.map(r => r.observed_at).filter(Boolean);
         const histTimes = sgHistory.map(r => r.observed_at).filter(Boolean);
 
-        const freshness = {
-            SeatGeek: calculateFreshnessAge(sgTimes.length ? sgTimes.sort().reverse()[0] : null),
-            TickPick: calculateFreshnessAge(tpTimes.length ? tpTimes.sort().reverse()[0] : null),
-            Vivid: calculateFreshnessAge(vsTimes.length ? vsTimes.sort().reverse()[0] : null),
-            History: calculateFreshnessAge(histTimes.length ? histTimes.sort().reverse()[0] : null),
+        const aggregateTimes = [
+            ...sgTimes,
+            ...tpTimes,
+            ...vsTimes,
+        ];
+        const latestHistory = [
+            ...histTimes,
+            ...tpHistory.map(r => r.observed_at).filter(Boolean),
+            ...vsHistory.map(r => r.observed_at).filter(Boolean),
+        ];
+
+        const fallbackFreshness = {
+            Aggregate: calculateFreshnessAge(latestIso(aggregateTimes)),
+            SeatGeek: calculateFreshnessAge(latestIso(sgTimes)),
+            TickPick: calculateFreshnessAge(latestIso(tpTimes)),
+            Vivid: calculateFreshnessAge(latestIso(vsTimes)),
+            History: calculateFreshnessAge(latestIso(latestHistory)),
         };
+
+        const freshness = realtimeStatus ? {
+            Aggregate: statusEntryToFreshness(realtimeStatus.aggregate),
+            SeatGeek: statusEntryToFreshness(realtimeStatus.sources?.SeatGeek),
+            TickPick: statusEntryToFreshness(realtimeStatus.sources?.TickPick),
+            Vivid: statusEntryToFreshness(realtimeStatus.sources?.Vivid),
+            FIFA: statusEntryToFreshness(realtimeStatus.sources?.FIFA),
+            History: fallbackFreshness.History,
+            generatedAt: realtimeStatus.generated_at,
+        } : fallbackFreshness;
 
         return {
             snapshot,
             historyByEvent,
             freshness,
-            aliases: teamAliases
+            aliases: teamAliases,
+            realtimeStatus
         };
     });
 }

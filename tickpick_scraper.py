@@ -22,6 +22,8 @@ from urllib.parse import urljoin
 import pandas as pd
 import requests
 
+from history_utils import append_incremental_history
+
 
 BASE_DIR = os.path.dirname(__file__)
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "tickpick_data.csv")
@@ -220,12 +222,17 @@ def main() -> int:
     df.to_csv(SNAPSHOT_PATH, index=False)
 
     history_df = df[["tickpick_event_id", "observed_at", "low_price_usd"]].copy()
-    write_header = not os.path.exists(HISTORY_PATH)
-    history_df.to_csv(HISTORY_PATH, mode="a", header=write_header, index=False)
+    appended_history = append_incremental_history(
+        snapshot_df=history_df,
+        history_path=HISTORY_PATH,
+        id_col="tickpick_event_id",
+        observed_col="observed_at",
+        price_col="low_price_usd",
+    )
 
     print(
         f"Wrote {len(df)} rows to tickpick_data.csv; "
-        f"appended {len(history_df)} rows to tickpick_history.csv."
+        f"appended {appended_history} meaningful rows to tickpick_history.csv."
     )
     return 0
 

@@ -1,7 +1,7 @@
 // Main Application Controller and Event Orchestrator
 
-import { getPreferences, savePreferences } from './preferences.js';
-import { loadAllData } from './data.js';
+import { getPreferences, savePreferences } from './preferences.js?v=20260531-realtime';
+import { loadAllData } from './data.js?v=20260531-realtime';
 import { 
     renderFreshness, 
     populateVenueCheckboxes, 
@@ -11,10 +11,10 @@ import {
     openDetailsModal,
     getFlagEmoji,
     escapeHtml
-} from './render.js';
-import { updateChart } from './charts.js';
-import { initNotifications, checkAndNotifyHits } from './notifications.js';
-import { saveUserTargets, loadUserTargets } from './storage.js';
+} from './render.js?v=20260531-realtime';
+import { updateChart } from './charts.js?v=20260531-realtime';
+import { initNotifications, checkAndNotifyHits } from './notifications.js?v=20260531-realtime';
+import { saveUserTargets, loadUserTargets } from './storage.js?v=20260531-realtime';
 
 // Application Global State
 const state = {
@@ -55,8 +55,8 @@ function fetchAndLoad() {
 
         // Populate venue checkboxes under Preferences
         const prefs = getPreferences();
-        populateVenueCheckboxes(state.allData, prefs.venuesList, (venues) => {
-            prefs.venuesList = venues;
+        populateVenueCheckboxes(state.allData, prefs.preferredVenues || [], (venues) => {
+            prefs.preferredVenues = venues;
             savePreferences(prefs);
             // Trigger recalculation on venue change
             fetchAndLoad();
@@ -106,13 +106,18 @@ function refreshDashboard() {
     // Update Sync date label
     const syncTimeLabel = document.getElementById('last-updated-time');
     if (syncTimeLabel && state.allData.length) {
-        const timestamps = state.allData
-            .map(d => d.latest_observed_at)
-            .filter(Boolean)
-            .map(t => new Date(t).getTime())
-            .filter(t => !isNaN(t));
-        if (timestamps.length) {
-            syncTimeLabel.textContent = new Date(Math.max(...timestamps)).toLocaleString();
+        const aggregateDate = state.freshness?.Aggregate?.date;
+        if (aggregateDate && !isNaN(aggregateDate.getTime())) {
+            syncTimeLabel.textContent = aggregateDate.toLocaleString();
+        } else {
+            const timestamps = state.allData
+                .map(d => d.latest_source_observed_at || d.agg_observed_at || d.latest_observed_at)
+                .filter(Boolean)
+                .map(t => new Date(t).getTime())
+                .filter(t => !isNaN(t));
+            if (timestamps.length) {
+                syncTimeLabel.textContent = new Date(Math.max(...timestamps)).toLocaleString();
+            }
         }
     }
 }
@@ -436,7 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
             teamPremiumTolerance: teamPremiumInput.value,
             fifaResalePreference: fifaPrefInput.value,
             avoidLateGames: avoidLateInput.checked,
-            venuesList: prefs.venuesList // preserve venue checks
+            preferredVenues: prefs.preferredVenues // preserve venue checks
         };
         savePreferences(updatedPrefs);
         // Refresh with new target formulas

@@ -38,6 +38,11 @@ export function savePins(p) {
     localStorage.setItem(PINS_KEY, JSON.stringify(p));
 }
 
+export function isPinned(eventId) {
+    const pins = loadPins();
+    return Object.prototype.hasOwnProperty.call(pins, String(eventId));
+}
+
 export function loadNotes() {
     try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; }
 }

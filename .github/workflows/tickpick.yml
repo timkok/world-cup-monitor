@@ -30,6 +30,9 @@ jobs:
       - name: Run TickPick scraper
         run: python tickpick_scraper.py
 
+      - name: Run realtime status update
+        run: python realtime_status.py
+
       - name: Run notifier
         env:
           USER_TARGETS: ${{ secrets.USER_TARGETS }}
@@ -47,7 +50,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Pull latest in case the SeatGeek workflow pushed during our run
           git pull --rebase origin main || true
-          git add tickpick_data.csv tickpick_history.csv
+          git add tickpick_data.csv tickpick_history.csv realtime_status.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

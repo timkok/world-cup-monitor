@@ -832,6 +832,8 @@ h1, h2, h3, h4 { color: var(--primary-color); }
 .pill-fresh { background-color: #064e3b; color: #6ee7b7; border: 1px solid #047857; }
 .pill-aging { background-color: #78350f; color: #fde68a; border: 1px solid #b45309; }
 .pill-stale { background-color: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; }
+.pill-very-stale { background-color: #450a0a; color: #fecaca; border: 1px solid #991b1b; }
+.pill-missing { background-color: #334155; color: #cbd5e1; border: 1px solid #475569; }
 .pill-unknown { background-color: #334155; color: #cbd5e1; border: 1px solid #475569; }
 .freshness-countdown {
     margin-left: auto;
@@ -1183,4 +1185,3 @@ h1, h2, h3, h4 { color: var(--primary-color); }
         border-radius: 12px;
     }
 }
-

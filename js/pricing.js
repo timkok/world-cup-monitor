@@ -1,6 +1,6 @@
 // Pricing Logic, Decision Engines, and Target Price Math
 
-import { STRONG_TEAMS, LOCAL_CITIES } from './config.js';
+import { STRONG_TEAMS, LOCAL_CITIES } from './config.js?v=20260531-realtime';
 
 export function getFaceValue(stage) {
     const s = (stage || '').toLowerCase();
@@ -128,12 +128,13 @@ export function computeConfidenceScore(row, historySeries) {
     else if (sources.length === 1) score += 15;
 
     // 2. Data Freshness (max 25 points)
-    if (row.latest_observed_at) {
-        const lastUpdated = new Date(row.latest_observed_at).getTime();
+    const freshestObservedAt = row.latest_source_observed_at || row.agg_observed_at || row.latest_observed_at;
+    if (freshestObservedAt) {
+        const lastUpdated = new Date(freshestObservedAt).getTime();
         const ageHours = (Date.now() - lastUpdated) / (1000 * 60 * 60);
-        if (ageHours <= 6) score += 25;
-        else if (ageHours <= 24) score += 15;
-        else if (ageHours <= 48) score += 5;
+        if (ageHours <= 1.5) score += 25;
+        else if (ageHours <= 6) score += 15;
+        else if (ageHours <= 24) score += 5;
     }
 
     // 3. Price History Length (max 20 points)

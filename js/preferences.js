@@ -1,6 +1,6 @@
 // User Preferences Module
 
-import { loadPreferences, savePreferences } from './storage.js';
+import { loadPreferences, savePreferences as saveStoredPreferences } from './storage.js?v=20260531-realtime';
 
 export const PREF_DEFAULTS = {
     homeBaseCity: 'New York / New Jersey',
@@ -34,7 +34,7 @@ export function getPreferences() {
         }
         
         // Save initial migrated/default preferences
-        savePreferences(prefs);
+        saveStoredPreferences(prefs);
     } else {
         // Fill in missing default fields if user has an older prefs version
         let updated = false;
@@ -45,7 +45,7 @@ export function getPreferences() {
             }
         }
         if (updated) {
-            savePreferences(prefs);
+            saveStoredPreferences(prefs);
         }
     }
     return prefs;
@@ -54,11 +54,15 @@ export function getPreferences() {
 export function updatePreferences(newPrefs) {
     const current = getPreferences();
     const updated = { ...current, ...newPrefs };
-    savePreferences(updated);
+    saveStoredPreferences(updated);
 
     // Keep legacy keys in sync for backward compatibility
     localStorage.setItem('fcTickets', updated.ticketsCount);
     localStorage.setItem('wcm.budget', updated.maxTotalBudget);
     
     return updated;
+}
+
+export function savePreferences(prefs) {
+    saveStoredPreferences(prefs);
 }

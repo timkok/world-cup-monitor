@@ -1,6 +1,6 @@
 // Browser Notifications Handler
 
-import { loadSeen, saveSeen } from './storage.js';
+import { loadSeen, saveSeen } from './storage.js?v=20260531-realtime';
 
 export function initNotifications() {
     const notifyBtn = document.getElementById('enable-notifications');

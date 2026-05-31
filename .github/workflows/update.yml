@@ -28,6 +28,9 @@ jobs:
       - name: Run scraper
         run: python scraper.py
 
+      - name: Run realtime status update
+        run: python realtime_status.py
+
       - name: Run notifier
         env:
           USER_TARGETS: ${{ secrets.USER_TARGETS }}
@@ -44,7 +47,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main || true
-          git add seatgeek_data.csv price_history.csv
+          git add seatgeek_data.csv price_history.csv realtime_status.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

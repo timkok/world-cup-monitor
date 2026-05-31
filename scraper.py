@@ -25,6 +25,8 @@ from typing import Optional
 import pandas as pd
 import requests
 
+from history_utils import append_incremental_history
+
 
 BASE_DIR = os.path.dirname(__file__)
 CSV_PATH = os.path.join(BASE_DIR, "seatgeek_data.csv")
@@ -188,15 +190,21 @@ def update_data() -> int:
 
     df.to_csv(CSV_PATH, index=False)
 
+    appended_history = 0
     if history_rows:
         history_df = pd.DataFrame(history_rows, columns=HISTORY_COLUMNS)
-        write_header = not os.path.exists(HISTORY_PATH)
-        history_df.to_csv(HISTORY_PATH, mode="a", header=write_header, index=False)
+        appended_history = append_incremental_history(
+            snapshot_df=history_df,
+            history_path=HISTORY_PATH,
+            id_col="event_id",
+            observed_col="observed_at",
+            price_col="low_usd",
+        )
 
     print(
         f"[{datetime.now(timezone.utc).isoformat()}] "
         f"Done. Updated {updated}/{len(df)} matches, {failed} failures; "
-        f"appended {len(history_rows)} history rows."
+        f"appended {appended_history} meaningful history rows."
     )
     return 0
 
