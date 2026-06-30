@@ -1,10 +1,10 @@
 {
   "aggregate": {
-    "age_minutes": 58.1,
-    "latest_observed_at": "2026-06-30T18:17:09.962108+00:00",
+    "age_minutes": 0.0,
+    "latest_observed_at": "2026-06-30T20:24:34.584891+00:00",
     "status": "Fresh"
   },
-  "generated_at": "2026-06-30T19:15:13.790027+00:00",
+  "generated_at": "2026-06-30T20:24:35.008666+00:00",
   "sources": {
     "FIFA": {
       "age_minutes": null,
@@ -16,7 +16,7 @@
       "status": "Missing"
     },
     "SeatGeek": {
-      "age_minutes": 75255.2,
+      "age_minutes": 75324.6,
       "latest_observed_at": "2026-05-09T13:00:00+00:00",
       "note": "",
       "priced_rows": 104,
@@ -25,16 +25,16 @@
       "status": "Very stale"
     },
     "TickPick": {
-      "age_minutes": 58.1,
-      "latest_observed_at": "2026-06-30T18:17:09.962108+00:00",
+      "age_minutes": 0.0,
+      "latest_observed_at": "2026-06-30T20:24:34.584891+00:00",
       "note": "",
-      "priced_rows": 25,
-      "rows": 25,
+      "priced_rows": 26,
+      "rows": 26,
       "source": "TickPick",
       "status": "Fresh"
     },
     "Vivid": {
-      "age_minutes": 69314.2,
+      "age_minutes": 69383.6,
       "latest_observed_at": "2026-05-13T16:00:59.609643+00:00",
       "note": "",
       "priced_rows": 25,
